@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from app.core.types import MoneyIn, PositiveMoney, PositiveQty
-from app.modules.common_schemas import VoidIn  # noqa: F401
+from app.modules.common_schemas import EditableIn, EditInfoOut, VoidIn  # noqa: F401
 
 
 class ChallanPaymentIn(BaseModel):
@@ -17,7 +17,7 @@ class ChallanPaymentIn(BaseModel):
     mode: Literal["cash", "bank", "cheque", "online"] = "cash"
 
 
-class DeliveryIn(BaseModel):
+class DeliveryIn(EditableIn):
     date: dt.date
     customer_id: int
     site_id: int | None = None
@@ -40,7 +40,7 @@ class DeliveryIn(BaseModel):
     client_ref: uuid.UUID | None = None
 
 
-class DeliveryOut(BaseModel):
+class DeliveryOut(EditInfoOut):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

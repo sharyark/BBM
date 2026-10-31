@@ -23,6 +23,7 @@ type Preset = { direction: 'in' | 'out' }
 function PaymentFormView({ doc, preset, onDone }: DocFormProps<Payment, Preset>) {
   const lookups = useLookups()
   const clientRef = useRef(crypto.randomUUID())
+  const [editReason, setEditReason] = useState('')
   const canAdd = usePermission('masters.write')
   const [adding, setAdding] = useState<string | null>(null)
   const direction = doc?.direction ?? preset?.direction ?? 'in'
@@ -42,6 +43,7 @@ function PaymentFormView({ doc, preset, onDone }: DocFormProps<Payment, Preset>)
 
   return (
     <DocFormShell
+      editReason={doc ? { value: editReason, onChange: setEditReason } : undefined}
       saving={save.isPending}
       onSubmit={handleSubmit((v) => {
         const { counterparty: who, ...rest } = v
@@ -50,7 +52,7 @@ function PaymentFormView({ doc, preset, onDone }: DocFormProps<Payment, Preset>)
           party_id: who === 'party' ? v.party_id : null,
           staff_id: who === 'staff' ? v.staff_id : null,
           purpose: who === 'staff' ? v.purpose : 'general',
-          ref_no: v.ref_no || null, notes: v.notes || null, ...(doc ? {} : { client_ref: clientRef.current }),
+          ref_no: v.ref_no || null, notes: v.notes || null, ...(doc ? { edit_reason: editReason.trim() } : { client_ref: clientRef.current }),
         })
       })}
     >
@@ -112,6 +114,7 @@ export default function PaymentsPage() {
       newButtons={[{ label: 'New receipt (money in)', preset: { direction: 'in' } }, { label: 'New payment (money out)', preset: { direction: 'out' } }]}
       filters={[{ param: 'party_id', placeholder: 'Any party', options: optionsOf(lookups.parties) }, { param: 'staff_id', placeholder: 'Any staff', options: optionsOf(lookups.allStaff) }]}
       printUrl={(d) => `/payments/${d.id}/pdf`}
+      thermalPrint
     />
   )
 }

@@ -101,7 +101,7 @@ def test_edit_challan_reverses_and_reposts(world):
     purchase(world)
     d = challan(world, "1")
     body = {"date": str(TODAY), "customer_id": world.customer["id"], "material_id": world.rait["id"],
-            "qty": "4", "sale_rate": "3100"}  # fmt: skip
+            "qty": "4", "sale_rate": "3100", "edit_reason": "rate agreed"}  # fmt: skip
     r = world.c.put(f"/api/v1/deliveries/{d['id']}", json=body, headers=world.h)
     assert r.status_code == 200, r.text
     assert Decimal(r.json()["sale_amount"]) == 12400
@@ -289,3 +289,30 @@ def test_opening_balances_and_stock(world):
     )  # fmt: skip
     assert world.balance(world.customer["account_id"]) == "9000.0"
     assert_books_balance(world)
+
+
+def test_edit_needs_a_reason_and_is_marked_edited(world, accountant):
+    purchase(world)
+    d = challan(world, "1")
+    assert d["edit_count"] == 0 and d["edit_reason"] is None
+    body = {"date": str(TODAY), "customer_id": world.customer["id"], "material_id": world.rait["id"], "qty": "2"}
+
+    r = world.c.put(f"/api/v1/deliveries/{d['id']}", json=body, headers=accountant)
+    assert r.status_code == 400 and r.json()["code"] == "EDIT_REASON_REQUIRED"
+    assert world.get(f"/deliveries/{d['id']}")["qty"] == "1.000"  # nothing changed
+
+    r = world.c.put(f"/api/v1/deliveries/{d['id']}", json={**body, "edit_reason": "  2 trolleys  "}, headers=accountant)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["edit_count"] == 1 and out["edit_reason"] == "2 trolleys" and out["edited_at"]
+
+    r = world.c.put(
+        f"/api/v1/deliveries/{d['id']}", json={**body, "qty": "3", "edit_reason": "3 trolleys"}, headers=world.h
+    )
+    assert r.json()["edit_count"] == 2 and r.json()["edit_reason"] == "3 trolleys"
+
+    # every editable document follows the same rule
+    p = world.get("/purchases")["items"][0]
+    pr = world.c.put(f"/api/v1/purchases/{p['id']}", json={"date": p["date"], "supplier_id": p["supplier_id"],
+                     "lines": [{"material_id": world.rait["id"], "qty": "10", "rate": "2000"}]}, headers=world.h)  # fmt: skip
+    assert pr.status_code == 400 and pr.json()["code"] == "EDIT_REASON_REQUIRED"

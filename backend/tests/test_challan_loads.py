@@ -77,7 +77,13 @@ def test_rait_plus_cement_on_one_challan(world):
     assert_books_balance(world)
 
     # editing away the cement puts the bags back; voiding restores everything
-    body = {"date": d["date"], "customer_id": world.customer["id"], "material_id": world.rait["id"], "qty": "1"}
+    body = {
+        "date": d["date"],
+        "customer_id": world.customer["id"],
+        "material_id": world.rait["id"],
+        "qty": "1",
+        "edit_reason": "cement removed",
+    }
     r = world.c.put(f"/api/v1/deliveries/{d['id']}", json=body, headers=world.h)
     assert r.status_code == 200 and r.json()["extra_material_id"] is None and r.json()["extra_amount"] == "0.00"
     assert Decimal(stock_of(world, m["id"])["qty_on_hand"]) == 100

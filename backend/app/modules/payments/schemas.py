@@ -3,13 +3,13 @@ import uuid
 from decimal import Decimal
 from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import ConfigDict, model_validator
 
 from app.core.types import PositiveMoney
-from app.modules.common_schemas import VoidIn  # noqa: F401
+from app.modules.common_schemas import EditableIn, EditInfoOut, VoidIn  # noqa: F401
 
 
-class PaymentIn(BaseModel):
+class PaymentIn(EditableIn):
     date: dt.date
     direction: Literal["in", "out"]
     party_id: int | None = None
@@ -32,7 +32,7 @@ class PaymentIn(BaseModel):
         return self
 
 
-class PaymentOut(BaseModel):
+class PaymentOut(EditInfoOut):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

@@ -10,6 +10,7 @@ import type { Attendance, AttendanceStatus, Staff } from '@/api/types'
 import { usePermission } from '@/hooks/usePermission'
 import { API_DATE } from '@/lib/date'
 import { useQueryClient } from '@tanstack/react-query'
+import { STICKY_HEADER } from '@/components/tableDefaults'
 
 type Cell = { status: AttendanceStatus; overtime_hours: string }
 const COLORS: Record<AttendanceStatus, string> = { present: 'green', half: 'orange', absent: 'red' }
@@ -128,7 +129,7 @@ export default function AttendanceGrid() {
         {canWrite && <Button type="primary" disabled={!pending} loading={saving} onClick={save}>Save attendance{pending ? ` (${pending})` : ''}</Button>}
         {pending > 0 && <Button onClick={() => setEdits({})}>Discard changes</Button>}
       </Space>
-      <Table<Staff> size="small" rowKey="id" loading={isLoading} columns={columns} dataSource={staff} pagination={false} scroll={{ x: 'max-content' }} />
+      <Table<Staff> sticky={STICKY_HEADER} size="small" rowKey="id" loading={isLoading} columns={columns} dataSource={staff} pagination={false} scroll={{ x: 'max-content' }} />
     </>
   )
 }

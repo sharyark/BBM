@@ -134,6 +134,17 @@ class RateLookup(BaseModel):
     source: Literal["rate_card", "default"]
 
 
+class DriverSuggestion(BaseModel):
+    """Who should drive a vehicle on a date, for the challan/purchase/rental forms."""
+
+    driver_id: int | None
+    # today: a substitute already used on this vehicle that day; regular: the vehicle's own driver
+    source: Literal["today", "regular"] | None
+    regular_driver_id: int | None
+    regular_absent: bool
+    absent_driver_ids: list[int]
+
+
 class VehicleIn(BaseModel):
     type: VehicleType
     reg_no: str | None = Field(default=None, max_length=30)

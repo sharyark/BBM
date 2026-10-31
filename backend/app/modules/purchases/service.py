@@ -8,7 +8,7 @@ from app.accounting.sequences import next_doc_no
 from app.core.errors import NotFound
 from app.core.money import money
 from app.core.pagination import ListParams, apply_sort, paginate
-from app.modules.common import ensure_active, find_by_client_ref, get_or_404, mark_void
+from app.modules.common import ensure_active, find_by_client_ref, get_or_404, mark_edited, mark_void
 from app.modules.masters.models import Material, Party, Staff, Vehicle
 from app.modules.purchases.models import Purchase, PurchaseLine
 from app.modules.purchases.schemas import PurchaseIn
@@ -80,6 +80,8 @@ def create(db: Session, data: PurchaseIn) -> tuple[Purchase, bool]:
 def update(db: Session, purchase_id: int, data: PurchaseIn) -> Purchase:
     purchase = get_or_404(db, Purchase, purchase_id, "Purchase")
     ensure_active(purchase)
+    # Before any other check, so a missing reason is the first thing the munshi is told.
+    mark_edited(db, purchase, data.edit_reason)
     supplier = _validate(db, data)
     ensure_period_open(db, purchase.date, data.date)
     _undo(db, purchase)

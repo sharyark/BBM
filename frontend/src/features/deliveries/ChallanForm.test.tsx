@@ -79,6 +79,13 @@ function renderForm(onSaved = vi.fn(), d: Delivery | null = delivery) {
   return onSaved
 }
 
+/** Edits must say why; fill the reason box, then press Save changes. */
+async function saveChanges(reason = 'qty corrected') {
+  const box = screen.getByLabelText('Reason for change')
+  if (!(box as HTMLInputElement).value) await userEvent.type(box, reason)
+  await userEvent.click(screen.getByRole('button', { name: /Save changes/ }))
+}
+
 describe('ChallanForm (edit mode)', () => {
   const original = api.defaults.adapter
   afterEach(() => {
@@ -106,7 +113,7 @@ describe('ChallanForm (edit mode)', () => {
     const qty = screen.getByDisplayValue('5.000')
     await userEvent.clear(qty)
     await userEvent.type(qty, '9')
-    await userEvent.click(screen.getByRole('button', { name: /Save changes/ }))
+    await saveChanges()
 
     expect(await screen.findByText('Not enough stock in the yard')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Save anyway' }))
@@ -114,9 +121,22 @@ describe('ChallanForm (edit mode)', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
     expect(puts).toHaveLength(2)
     expect(puts[0]).toMatchObject({ qty: '9', allow_negative_stock: false, customer_id: 1, material_id: 2 })
-    expect(puts[1]).toMatchObject({ qty: '9', allow_negative_stock: true })
+    expect(puts[1]).toMatchObject({ qty: '9', allow_negative_stock: true, edit_reason: 'qty corrected' })
     // editing never sends a new client_ref (the challan already exists)
     expect(puts[0]).not.toHaveProperty('client_ref')
+  })
+
+  it('will not save an edit until a reason is written, then sends it', async () => {
+    const puts = setup([(c) => ok(c, { ...delivery, edit_count: 1, edit_reason: 'rate corrected' })])
+    const onSaved = renderForm()
+    await screen.findByText(/Yard stock: 7/)
+    await userEvent.click(screen.getByRole('button', { name: /Save changes/ }))
+    expect(await screen.findByText('Write why you are changing this entry')).toBeInTheDocument()
+    expect(puts).toHaveLength(0)
+
+    await saveChanges('  rate corrected ')
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(puts[0]).toMatchObject({ edit_reason: 'rate corrected' })
   })
 
   it('blocks submit and shows field errors for an invalid quantity', async () => {
@@ -125,7 +145,7 @@ describe('ChallanForm (edit mode)', () => {
     await screen.findByText(/Yard stock: 7/)
     const qty = screen.getByDisplayValue('5.000')
     await userEvent.clear(qty)
-    await userEvent.click(screen.getByRole('button', { name: /Save changes/ }))
+    await saveChanges()
     expect(await screen.findAllByText(/Enter a number|Required/)).not.toHaveLength(0)
     expect(puts).toHaveLength(0)
   })
@@ -144,7 +164,7 @@ describe('ChallanForm loads', () => {
     await userEvent.click(screen.getByLabelText('Load'))
     await userEvent.click(await screen.findByTitle('Half trolley'))
     expect(await screen.findByText(/7,500\.00|7500\.00/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /Save changes/ }))
+    await saveChanges()
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
     expect(puts[0]).toMatchObject({ qty: '5.000', load_size: 'half', load_unit: null, extra_material_id: null })
   })
@@ -159,7 +179,7 @@ describe('ChallanForm loads', () => {
     const crushRate = await screen.findByLabelText(/Crush rate/)
     await waitFor(() => expect((crushRate as HTMLInputElement).value).toBe('4600'))
     await waitFor(() => expect(screen.getByText(/^Total:/).textContent).toMatch(/3,800/))
-    await userEvent.click(screen.getByRole('button', { name: /Save changes/ }))
+    await saveChanges()
     await waitFor(() => expect(puts).toHaveLength(1))
     expect(puts[0]).toMatchObject({ qty: '1', load_size: 'half', extra_material_id: 4, extra_qty: '0.5', extra_rate: '4600' })
     expect(puts[0]).not.toHaveProperty('other_half_id')
@@ -176,7 +196,7 @@ describe('ChallanForm loads', () => {
     await userEvent.type(bags, '20')
     // the cement rate fills itself from the customer's rate / material default
     await waitFor(() => expect((screen.getByLabelText(/Cement rate/) as HTMLInputElement).value).toBe('1500'))
-    await userEvent.click(screen.getByRole('button', { name: /Save changes/ }))
+    await saveChanges()
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
     expect(puts[0]).toMatchObject({ load_size: 'full', extra_material_id: 3, extra_qty: '20', extra_rate: '1500' })
     expect(puts[0]).not.toHaveProperty('with_cement')
@@ -186,7 +206,7 @@ describe('ChallanForm loads', () => {
     const puts = setup([(c) => ok(c, delivery)])
     const onSaved = renderForm(vi.fn(), { ...delivery, load_unit: 'dumper', unit: 'dumper', qty: '1.000', stock_qty: '3.000', sale_rate: '9000.00' })
     expect(await screen.findByText(/1 dumper = 3 trolley/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /Save changes/ }))
+    await saveChanges()
     await waitFor(() => expect(puts).toHaveLength(1))
     expect(puts[0]).toMatchObject({ load_unit: 'dumper', qty: '1.000', load_size: 'full' })
     void onSaved

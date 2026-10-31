@@ -16,6 +16,7 @@ import { VoidButton } from '@/components/VoidButton'
 import { usePermission } from '@/hooks/usePermission'
 import { API_DATE, formatDate, today } from '@/lib/date'
 import { formatQty } from '@/lib/format'
+import { STICKY_HEADER } from '@/components/tableDefaults'
 
 export default function Settlements() {
   const { message } = App.useApp()
@@ -92,7 +93,7 @@ export default function Settlements() {
           </div>
         )}
       </Card>
-      <Table<Settlement> size="small" rowKey="id" loading={list.isLoading} columns={columns} dataSource={list.data ?? []} scroll={{ x: 'max-content' }} pagination={{ pageSize: 15, hideOnSinglePage: true }} rowClassName={(s) => (s.status === 'void' ? 'row-void' : '')} />
+      <Table<Settlement> sticky={STICKY_HEADER} size="small" rowKey="id" loading={list.isLoading} columns={columns} dataSource={list.data ?? []} scroll={{ x: 'max-content' }} pagination={{ pageSize: 15, hideOnSinglePage: true }} rowClassName={(s) => (s.status === 'void' ? 'row-void' : '')} />
     </>
   )
 }

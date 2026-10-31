@@ -6,7 +6,8 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
-from app.core.deps import DB, require_perm
+from app.core.deps import DB, CurrentUser, require_perm
+from app.core.permissions import has_permission
 from app.modules.common import get_or_404
 from app.modules.masters.models import Party
 from app.modules.reports import queries as q
@@ -25,8 +26,8 @@ def perm(name: str):
 
 
 @router.get("/dashboard", dependencies=[perm("dashboard.view")])
-def dashboard(db: DB):
-    return JSONResponse(q.dashboard(db))
+def dashboard(db: DB, user: CurrentUser):
+    return JSONResponse(q.dashboard(db, with_profit=has_permission(user.role, "report.profit")))
 
 
 @router.get("/khata/{party_id}", dependencies=[perm("report.khata")])

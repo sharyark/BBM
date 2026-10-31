@@ -1,5 +1,5 @@
 import { EditOutlined } from '@ant-design/icons'
-import { Button, Card, Modal, Select, Space, Table, Tag, Typography } from 'antd'
+import { Button, Card, Grid, Modal, Select, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useState } from 'react'
 import { usePage } from '@/api/hooks'
@@ -7,6 +7,7 @@ import { useLookups } from '@/api/lookups'
 import type { Delivery } from '@/api/types'
 import { DateRangeField, type DateRange } from '@/components/DateField'
 import { EntitySelect, optionsOf } from '@/components/EntitySelect'
+import { ExportCard } from '@/components/ExportCard'
 import { Money } from '@/components/Money'
 import { PageHeader } from '@/components/PageHeader'
 import { PrintButton } from '@/components/PrintButton'
@@ -16,7 +17,9 @@ import { usePermission } from '@/hooks/usePermission'
 import { formatDate, startOfMonth, today } from '@/lib/date'
 import { formatQty } from '@/lib/format'
 import { openFile } from '@/lib/download'
+import { getPaper } from '@/lib/paper'
 import ChallanForm from './ChallanForm'
+import { STICKY_HEADER } from '@/components/tableDefaults'
 
 export default function ChallanPage() {
   const lookups = useLookups()
@@ -30,6 +33,7 @@ export default function ChallanPage() {
     from: range[0], to: range[1], customer_id: customerId, status, page, size: 25,
   })
 
+  const wide = Grid.useBreakpoint().md ?? false
   const columns: ColumnsType<Delivery> = [
     { title: 'Challan', dataIndex: 'challan_no', width: 150 },
     { title: 'Date', dataIndex: 'date', render: formatDate },
@@ -51,13 +55,16 @@ export default function ChallanPage() {
     { title: 'Rate', dataIndex: 'sale_rate', align: 'right', render: (v) => <Money value={v} /> },
     { title: 'Amount', align: 'right', render: (_, d) => <Money value={Number(d.sale_amount) + Number(d.freight_amount) + Number(d.extra_amount)} bold /> },
     { title: 'Vehicle', dataIndex: 'vehicle_id', render: (id: number | null) => (id ? lookups.vehicleById.get(id)?.name : '') },
-    { title: 'Status', render: (_, d) => <StatusTag status={d.status} reason={d.void_reason} /> },
+    { title: 'Status', render: (_, d) => <StatusTag status={d.status} reason={d.void_reason} edit={d} /> },
     {
       title: '',
+      key: 'actions',
       align: 'right',
+      // Keep actions in view while scrolling wide tables; on a phone a pinned column would hide the data.
+      fixed: wide ? 'right' : undefined,
       render: (_, d) => (
         <Space size={4}>
-          <PrintButton url={`/deliveries/${d.id}/pdf`} />
+          <PrintButton url={`/deliveries/${d.id}/pdf`} thermal />
           {canEdit && d.status === 'active' && (
             <Button size="small" icon={<EditOutlined />} disabled={Boolean(d.invoice_id)} title={d.invoice_id ? 'On an invoice: void the invoice first' : 'Edit'} onClick={() => setEditing(d)} />
           )}
@@ -73,14 +80,16 @@ export default function ChallanPage() {
     <>
       <PageHeader title="Challans" subtitle="Trips out of the yard to customer sites" />
       <Card size="small" title="New challan" style={{ marginBottom: 16 }}>
-        <ChallanForm onPrint={(d) => void openFile(`/deliveries/${d.id}/pdf`).catch(() => undefined)} />
+        <ChallanForm onPrint={(d) => void openFile(`/deliveries/${d.id}/pdf`, { paper: getPaper() }).catch(() => undefined)} />
       </Card>
+      <ExportCard endpoint="/deliveries" noun="challan" />
       <Space wrap style={{ marginBottom: 12 }}>
         <DateRangeField value={range} onChange={(r) => { setRange(r); setPage(1) }} />
         <div style={{ width: 220 }}><EntitySelect options={optionsOf(lookups.customers)} value={customerId} onChange={(v) => { setCustomerId(v); setPage(1) }} placeholder="All customers" /></div>
         <Select allowClear placeholder="Any status" style={{ width: 130 }} value={status} onChange={(v) => { setStatus(v); setPage(1) }} options={[{ value: 'active', label: 'Active' }, { value: 'void', label: 'Void' }]} />
       </Space>
       <Table<Delivery>
+        sticky={STICKY_HEADER}
         size="small"
         rowKey="id"
         loading={isLoading}

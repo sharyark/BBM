@@ -6,7 +6,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.errors import Conflict, NotFound
+from app.core.errors import Conflict, DomainError, NotFound
 from app.modules.common_models import ACTIVE, VOID
 
 
@@ -34,3 +34,15 @@ def mark_void(doc, reason: str, user_id: int | None) -> None:
     doc.void_reason = reason
     doc.voided_at = dt.datetime.now(dt.UTC)
     doc.voided_by = user_id
+
+
+def mark_edited(db: Session, doc, reason: str | None) -> None:
+    """Record why a document was changed. Called by every service `update`, so an edit without a reason fails."""
+    reason = (reason or "").strip()
+    if len(reason) < 3:
+        raise DomainError("Please write why this entry is being changed", code="EDIT_REASON_REQUIRED")
+    actor = db.info.get("actor")
+    doc.edit_count = (doc.edit_count or 0) + 1
+    doc.edit_reason = reason
+    doc.edited_at = dt.datetime.now(dt.UTC)
+    doc.edited_by = getattr(actor, "user_id", None)

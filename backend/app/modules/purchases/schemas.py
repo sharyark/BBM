@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.types import PositiveMoney, PositiveQty
-from app.modules.common_schemas import VoidIn  # noqa: F401  (re-exported for the router)
+from app.modules.common_schemas import EditableIn, EditInfoOut, VoidIn  # noqa: F401  (re-exported for the router)
 
 
 class PurchaseLineIn(BaseModel):
@@ -15,7 +15,7 @@ class PurchaseLineIn(BaseModel):
     rate: PositiveMoney
 
 
-class PurchaseIn(BaseModel):
+class PurchaseIn(EditableIn):
     date: dt.date
     supplier_id: int
     supplier_slip_no: str | None = Field(default=None, max_length=40)
@@ -37,7 +37,7 @@ class PurchaseLineOut(BaseModel):
     amount: Decimal
 
 
-class PurchaseOut(BaseModel):
+class PurchaseOut(EditInfoOut):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

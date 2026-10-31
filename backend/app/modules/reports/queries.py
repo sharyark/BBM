@@ -4,7 +4,7 @@ import datetime as dt
 from collections import defaultdict
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.accounting.balances import account_balances, oldest_unpaid_dates
@@ -12,7 +12,8 @@ from app.accounting.chart import Code
 from app.accounting.models import Account, JournalEntry, JournalLine
 from app.core.config import get_settings
 from app.core.db import ZERO
-from app.core.errors import NotFound
+from app.core.errors import DomainError, NotFound
+from app.core.money import money, qty
 from app.modules.deliveries.models import Delivery
 from app.modules.labour.models import Attendance, WageSettlement
 from app.modules.masters.models import Material, MoneyAccount, Party, Site, Staff, Vehicle
@@ -659,8 +660,13 @@ def yard_stock(db: Session, date_from: dt.date, date_to: dt.date) -> ReportTable
 # ---------------------------------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------------------------------
-def dashboard(db: Session) -> dict:
+def dashboard(db: Session, *, with_profit: bool = False) -> dict:
+    """Owner's one-screen summary: today, where the money is, how business is going, and what needs doing.
+
+    `with_profit` adds this month's income/expense/profit; only roles allowed to see profit get it.
+    """
     today = dt.date.today()
+    yesterday = today - dt.timedelta(days=1)
     parties = db.scalars(select(Party)).all()
     party_bal = account_balances(db, [p.account_id for p in parties if p.account_id])
     receivable = sum((b for b in party_bal.values() if b > 0), ZERO)
@@ -671,29 +677,106 @@ def dashboard(db: Session) -> dict:
     cash = sum((money_bal.get(m.account_id, ZERO) for m in money_accounts if m.kind == "cash"), ZERO)
     bank = sum((money_bal.get(m.account_id, ZERO) for m in money_accounts if m.kind != "cash"), ZERO)
 
+    active = Delivery.status == "active"
+    challan_total = Delivery.sale_amount + Delivery.freight_amount + Delivery.extra_amount
+
     def sales_between(start: dt.date, end: dt.date) -> Decimal:
         return Decimal(
             db.scalar(
-                select(
-                    func.coalesce(func.sum(Delivery.sale_amount + Delivery.freight_amount + Delivery.extra_amount), 0)
-                ).where(Delivery.status == "active", Delivery.date >= start, Delivery.date <= end)
+                select(func.coalesce(func.sum(challan_total), 0)).where(
+                    active, Delivery.date >= start, Delivery.date <= end
+                )
             )
         )
 
-    trips_today = db.scalar(
-        select(func.count()).select_from(Delivery).where(Delivery.status == "active", Delivery.date == today)
-    )
-    by_material = [
-        {"material": name, "unit": unit, "trips": n, "qty": Decimal(q)}
+    def trips_on(day: dt.date) -> int:
+        return db.scalar(select(func.count()).select_from(Delivery).where(active, Delivery.date == day)) or 0
+
+    # Last 14 days, one bar per day (days with no challans show as zero).
+    first_day = today - dt.timedelta(days=13)
+    per_day = {
+        d: (Decimal(total), n)
+        for d, total, n in db.execute(
+            select(Delivery.date, func.sum(challan_total), func.count())
+            .where(active, Delivery.date >= first_day, Delivery.date <= today)
+            .group_by(Delivery.date)
+        )
+    }
+    daily = []
+    for i in range(14):
+        day = first_day + dt.timedelta(days=i)
+        total, n = per_day.get(day, (ZERO, 0))
+        daily.append({"date": day.isoformat(), "sales": str(money(total)), "trips": n})
+
+    # Same stretch of last month (1st .. same day) so "this month" has something to compare with.
+    month_from = month_start(today)
+    prev_last = month_from - dt.timedelta(days=1)
+    prev_from = month_start(prev_last)
+    prev_to = prev_from.replace(day=min(today.day, prev_last.day))  # 31st -> 30th in a 30-day month
+
+    trips_by_material = [
+        {"material": name, "unit": unit, "trips": n, "qty": str(qty(Decimal(q)))}
         for name, unit, n, q in db.execute(
             select(Material.name, Material.unit, func.count(), func.sum(Delivery.stock_qty))
             .join(Material, Material.id == Delivery.material_id)
-            .where(Delivery.status == "active", Delivery.date == today)
+            .where(active, Delivery.date == today)
             .group_by(Material.name, Material.unit)
+            .order_by(func.count().desc())
         )
     ]
-    top = sorted(((b, p) for p in parties if (b := party_bal.get(p.account_id, ZERO)) > 0), key=lambda t: -t[0])[:5]
+
+    # Every vehicle, with today's challan + rental count, so idle ones are visible too.
+    trips_today_by_vehicle: dict[int, int] = defaultdict(int)
+    for vid, n in db.execute(
+        select(Delivery.vehicle_id, func.count())
+        .where(active, Delivery.date == today, Delivery.vehicle_id.is_not(None))
+        .group_by(Delivery.vehicle_id)
+    ):
+        trips_today_by_vehicle[vid] += n
+    for vid, n in db.execute(
+        select(Rental.vehicle_id, func.count())
+        .where(Rental.status == "active", Rental.date == today)
+        .group_by(Rental.vehicle_id)
+    ):
+        trips_today_by_vehicle[vid] += n
+    vehicles = [
+        {"id": v.id, "name": v.name, "type": v.type, "trips": trips_today_by_vehicle.get(v.id, 0)}
+        for v in db.scalars(select(Vehicle).where(Vehicle.is_active).order_by(Vehicle.type, Vehicle.name))
+    ]
+
+    # Money that actually moved in/out of cash and bank today. Edits and voids post a reversal pair,
+    # so both halves are left out to show real movement, not bookkeeping.
+    money_ids = [m.account_id for m in money_accounts]
+    reversed_ids = select(JournalEntry.reverses_id).where(JournalEntry.reverses_id.is_not(None))
+    moved_in, moved_out = db.execute(
+        select(func.coalesce(func.sum(JournalLine.debit), 0), func.coalesce(func.sum(JournalLine.credit), 0))
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_id)
+        .where(
+            JournalLine.account_id.in_(money_ids),
+            JournalEntry.date == today,
+            JournalEntry.reverses_id.is_(None),
+            JournalEntry.id.not_in(reversed_ids),
+        )
+    ).one()
+
+    # Every active material, also ones never stocked or used up ("finished" is exactly what the owner must see),
+    # plus switched-off materials that still have stock lying in the yard.
+    stock = [
+        {"material": name, "unit": unit, "qty": str(qty(q or ZERO)), "value": str(money(v or ZERO))}
+        for name, unit, q, v in db.execute(
+            select(Material.name, Material.unit, StockItem.qty_on_hand, StockItem.value)
+            .outerjoin(StockItem, StockItem.material_id == Material.id)
+            .where(or_(Material.is_active, func.coalesce(StockItem.qty_on_hand, 0) != 0))
+            .order_by(func.coalesce(StockItem.value, 0).desc(), Material.name)
+        )
+    ]
     stock_value = Decimal(db.scalar(select(func.coalesce(func.sum(StockItem.value), 0))))
+
+    top = sorted(((b, p) for p in parties if (b := party_bal.get(p.account_id, ZERO)) > 0), key=lambda t: -t[0])[:5]
+    top_owed = sorted(
+        ((-b, p) for p in parties if (b := party_bal.get(p.account_id, ZERO)) < 0 and p.type != "customer"),
+        key=lambda t: -t[0],
+    )[:3]
 
     # Payment reminders: customers whose advance is nearly used up, and udhaar left unpaid too long.
     settings = get_settings()
@@ -716,12 +799,24 @@ def dashboard(db: Session) -> dict:
         ),
         key=lambda r: -r["days"],
     )
+
+    profit = None
+    if with_profit:
+        pnl = monthly_pnl(db, month_from, today).meta
+        profit = {k: str(money(pnl[k])) for k in ("income", "expense", "profit")}
+
     return {
         "date": today.isoformat(),
-        "trips_today": trips_today,
-        "trips_by_material": [{**r, "qty": str(r["qty"])} for r in by_material],
+        "trips_today": trips_on(today),
+        "trips_yesterday": trips_on(yesterday),
+        "trips_by_material": trips_by_material,
         "sales_today": str(sales_between(today, today)),
-        "sales_month": str(sales_between(month_start(today), today)),
+        "sales_yesterday": str(sales_between(yesterday, yesterday)),
+        "sales_month": str(sales_between(month_from, today)),
+        "sales_prev_month": str(sales_between(prev_from, prev_to)),
+        "daily": daily,
+        "money_in_today": str(money(Decimal(moved_in))),
+        "money_out_today": str(money(Decimal(moved_out))),
         "cash_in_hand": str(cash),
         "bank_balance": str(bank),
         "total_receivable": str(receivable),
@@ -729,9 +824,211 @@ def dashboard(db: Session) -> dict:
         "staff_payable": str(sum((-b for b in staff_bal.values() if b < 0), ZERO)),
         "staff_advances": str(sum((b for b in staff_bal.values() if b > 0), ZERO)),
         "stock_value": str(stock_value),
+        "stock": stock,
+        "vehicles": vehicles,
         "top_debtors": [{"party_id": p.id, "name": p.name, "balance": str(b)} for b, p in top],
+        "top_owed": [{"party_id": p.id, "name": p.name, "balance": str(b)} for b, p in top_owed],
         "advance_low": advance_low[:8],
         "old_udhaar": old_udhaar[:8],
         "advance_low_threshold": str(settings.advance_low_threshold),
         "credit_overdue_days": settings.credit_overdue_days,
+        "profit_month": profit,
     }
+
+
+def export_range(date_from: dt.date | None, date_to: dt.date | None) -> tuple[dt.date, dt.date]:
+    """Day-wise backup exports default to today; a single given date means just that day."""
+    today = dt.date.today()
+    start, end = date_from or date_to or today, date_to or date_from or today
+    if start > end:
+        raise DomainError("The start date must be on or before the end date", code="BAD_DATE_RANGE")
+    return start, end
+
+
+def _export_name(prefix: str, date_from: dt.date, date_to: dt.date) -> str:
+    return f"{prefix}_{date_from}" if date_from == date_to else f"{prefix}_{date_from}_to_{date_to}"
+
+
+def _edited(doc) -> str:
+    if not doc.edit_count:
+        return ""
+    times = f" {doc.edit_count}x" if doc.edit_count > 1 else ""
+    return f"Edited{times}: {doc.edit_reason}"
+
+
+def _names(db: Session, model, ids: set) -> dict[int, str]:
+    ids = ids - {None}
+    return dict(db.execute(select(model.id, model.name).where(model.id.in_(ids))).all()) if ids else {}
+
+
+def challan_register(
+    db: Session, date_from: dt.date, date_to: dt.date, customer_id: int | None = None, status: str | None = None
+) -> ReportTable:
+    """Every challan in the range, voided ones included, as a day-wise backup sheet (no cost/profit columns)."""
+    stmt = select(Delivery).where(Delivery.date >= date_from, Delivery.date <= date_to)
+    if customer_id is not None:
+        stmt = stmt.where(Delivery.customer_id == customer_id)
+    if status:
+        stmt = stmt.where(Delivery.status == status)
+    deliveries = db.scalars(stmt.order_by(Delivery.date, Delivery.challan_no)).all()
+
+    party = _names(db, Party, {d.customer_id for d in deliveries})
+    site = _names(db, Site, {d.site_id for d in deliveries})
+    material = _names(db, Material, {d.material_id for d in deliveries} | {d.extra_material_id for d in deliveries})
+    vehicle = _names(db, Vehicle, {d.vehicle_id for d in deliveries})
+    staff = _names(db, Staff, {d.driver_id for d in deliveries})
+    receipt_ids = {d.receipt_id for d in deliveries} - {None}
+    paid = (
+        dict(db.execute(select(Payment.id, Payment.amount).where(Payment.id.in_(receipt_ids))).all())
+        if receipt_ids
+        else {}
+    )
+
+    rows = []
+    for d in deliveries:
+        total = d.sale_amount + d.freight_amount + d.extra_amount
+        rows.append(
+            {
+                "challan_no": d.challan_no,
+                "date": d.date,
+                "customer": party.get(d.customer_id, ""),
+                "site": site.get(d.site_id, ""),
+                "material": material.get(d.material_id, ""),
+                "load": "Half" if d.load_size == "half" else "Full",
+                "qty": d.qty,
+                "unit": d.unit,
+                "rate": d.sale_rate,
+                "sale_amount": d.sale_amount,
+                "extra_material": material.get(d.extra_material_id, ""),
+                "extra_qty": d.extra_qty,
+                "extra_unit": d.extra_unit or "",
+                "extra_rate": d.extra_rate,
+                "extra_amount": d.extra_amount or None,
+                "freight": d.freight_amount,
+                "total": total,
+                "paid_now": paid.get(d.receipt_id),
+                "vehicle": vehicle.get(d.vehicle_id, ""),
+                "driver": staff.get(d.driver_id, ""),
+                "status": "Void" if d.status == "void" else "Active",
+                "void_reason": d.void_reason or "",
+                "edited": _edited(d),
+                "notes": d.notes or "",
+            }
+        )
+    active = [r for d, r in zip(deliveries, rows, strict=True) if d.status == "active"]
+    totals = {
+        "challan_no": f"Total ({len(active)} active)",
+        **{k: sum((r[k] or ZERO for r in active), ZERO) for k in ("sale_amount", "extra_amount", "freight", "total")},
+        "paid_now": sum((r["paid_now"] or ZERO for r in active), ZERO),
+    }
+    columns = [
+        Col("challan_no", "Challan"),
+        Col("date", "Date", "date"),
+        Col("customer", "Customer"),
+        Col("site", "Site"),
+        Col("material", "Material"),
+        Col("load", "Load"),
+        Col("qty", "Qty", "qty"),
+        Col("unit", "Unit"),
+        Col("rate", "Rate", "money"),
+        Col("sale_amount", "Material amount", "money"),
+        Col("extra_material", "Extra material"),
+        Col("extra_qty", "Extra qty", "qty"),
+        Col("extra_unit", "Extra unit"),
+        Col("extra_rate", "Extra rate", "money"),
+        Col("extra_amount", "Extra amount", "money"),
+        Col("freight", "Freight", "money"),
+        Col("total", "Total", "money"),
+        Col("paid_now", "Paid on challan", "money"),
+        Col("vehicle", "Vehicle"),
+        Col("driver", "Driver"),
+        Col("status", "Status"),
+        Col("void_reason", "Void reason"),
+        Col("edited", "Edited"),
+        Col("notes", "Notes"),
+    ]
+    return ReportTable(
+        title="Challans",
+        subtitle=_range_label(date_from, date_to),
+        columns=columns,
+        rows=rows,
+        totals=totals if rows else None,
+        meta={"filename": _export_name("challans", date_from, date_to)},
+    )
+
+
+def purchase_register(
+    db: Session, date_from: dt.date, date_to: dt.date, supplier_id: int | None = None, status: str | None = None
+) -> ReportTable:
+    """Every purchase in the range, one row per material line, voided ones included (day-wise backup sheet)."""
+    stmt = select(Purchase).where(Purchase.date >= date_from, Purchase.date <= date_to)
+    if supplier_id is not None:
+        stmt = stmt.where(Purchase.supplier_id == supplier_id)
+    if status:
+        stmt = stmt.where(Purchase.status == status)
+    purchases = db.scalars(stmt.order_by(Purchase.date, Purchase.bill_no)).all()
+
+    party = _names(db, Party, {p.supplier_id for p in purchases})
+    material = _names(db, Material, {line.material_id for p in purchases for line in p.lines})
+    units = (
+        dict(db.execute(select(Material.id, Material.unit).where(Material.id.in_(material))).all()) if material else {}
+    )
+    vehicle = _names(db, Vehicle, {p.vehicle_id for p in purchases})
+    staff = _names(db, Staff, {p.driver_id for p in purchases})
+
+    rows = []
+    for p in purchases:
+        for line in p.lines:
+            rows.append(
+                {
+                    "bill_no": p.bill_no,
+                    "date": p.date,
+                    "supplier": party.get(p.supplier_id, ""),
+                    "slip_no": p.supplier_slip_no or "",
+                    "material": material.get(line.material_id, ""),
+                    "qty": line.qty,
+                    "unit": units.get(line.material_id, ""),
+                    "rate": line.rate,
+                    "amount": line.amount,
+                    "bill_total": p.total,
+                    "brought_by": "Own vehicle" if p.transport_by == "own" else "Supplier",
+                    "vehicle": vehicle.get(p.vehicle_id, ""),
+                    "driver": staff.get(p.driver_id, ""),
+                    "status": "Void" if p.status == "void" else "Active",
+                    "void_reason": p.void_reason or "",
+                    "edited": _edited(p),
+                    "notes": p.notes or "",
+                }
+            )
+    active = [p for p in purchases if p.status == "active"]
+    totals = {
+        "bill_no": f"Total ({len(active)} active)",
+        "amount": sum((line.amount for p in active for line in p.lines), ZERO),
+    }
+    columns = [
+        Col("bill_no", "Bill"),
+        Col("date", "Date", "date"),
+        Col("supplier", "Supplier"),
+        Col("slip_no", "Supplier slip"),
+        Col("material", "Material"),
+        Col("qty", "Qty", "qty"),
+        Col("unit", "Unit"),
+        Col("rate", "Rate", "money"),
+        Col("amount", "Amount", "money"),
+        Col("bill_total", "Bill total", "money"),
+        Col("brought_by", "Brought by"),
+        Col("vehicle", "Vehicle"),
+        Col("driver", "Driver"),
+        Col("status", "Status"),
+        Col("void_reason", "Void reason"),
+        Col("edited", "Edited"),
+        Col("notes", "Notes"),
+    ]
+    return ReportTable(
+        title="Purchases",
+        subtitle=_range_label(date_from, date_to),
+        columns=columns,
+        rows=rows,
+        totals=totals if rows else None,
+        meta={"filename": _export_name("purchases", date_from, date_to)},
+    )

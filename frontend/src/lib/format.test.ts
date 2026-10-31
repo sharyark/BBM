@@ -1,4 +1,4 @@
-import { formatCurrency, formatDrCr, formatMoney, formatQty, toDecimalString, toNumber } from './format'
+import { formatCurrency, formatDrCr, formatMoney, formatQty, formatShort, toDecimalString, toNumber } from './format'
 
 describe('format', () => {
   it('groups money with two decimals (lakh style for en-IN)', () => {
@@ -27,5 +27,13 @@ describe('format', () => {
     expect(toDecimalString(0.1 + 0.2)).toBe('0.30')
     expect(toDecimalString(1.005)).toBe('1.01')
     expect(toDecimalString(2.5, 3)).toBe('2.500')
+  })
+  it('shortens big amounts to lakh / crore for headlines', () => {
+    expect(formatShort('3614122')).toBe('36.1 lakh')
+    expect(formatShort('445665.45')).toBe('4.46 lakh')
+    expect(formatShort('200000')).toBe('2 lakh')
+    expect(formatShort('12500000')).toBe('1.25 crore')
+    expect(formatShort('75000')).toBe('75,000')
+    expect(formatShort('-150000')).toBe('-1.5 lakh')
   })
 })

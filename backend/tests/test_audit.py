@@ -12,7 +12,7 @@ def test_create_update_void_are_audited_with_before_after(world):
     purchase(world)
     d = challan(world, "1")
     body = {"date": str(TODAY), "customer_id": world.customer["id"], "material_id": world.rait["id"],
-            "qty": "2", "sale_rate": "3300"}  # fmt: skip
+            "qty": "2", "sale_rate": "3300", "edit_reason": "rate agreed"}  # fmt: skip
     world.c.put(f"/api/v1/deliveries/{d['id']}", json=body, headers=world.h)
     world.post(f"/deliveries/{d['id']}/void", {"reason": "customer cancelled"}, expect=200)
     entries = logs(world, entity="deliveries", entity_id=d["id"])

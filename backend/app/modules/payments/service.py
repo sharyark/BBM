@@ -6,7 +6,7 @@ from app.accounting.posting import ensure_period_open, post, reverse
 from app.accounting.sequences import next_doc_no
 from app.core.errors import Conflict, NotFound
 from app.core.pagination import ListParams, apply_sort, paginate
-from app.modules.common import ensure_active, find_by_client_ref, get_or_404, mark_void
+from app.modules.common import ensure_active, find_by_client_ref, get_or_404, mark_edited, mark_void
 from app.modules.masters.models import MoneyAccount, Party, Staff
 from app.modules.payments.models import Payment
 from app.modules.payments.schemas import PaymentIn
@@ -73,6 +73,8 @@ def create(db: Session, data: PaymentIn) -> tuple[Payment, bool]:
 def update(db: Session, payment_id: int, data: PaymentIn) -> Payment:
     p = get_or_404(db, Payment, payment_id, "Payment")
     ensure_active(p)
+    # Before any other check, so a missing reason is the first thing the munshi is told.
+    mark_edited(db, p, data.edit_reason)
     if data.direction != p.direction:
         raise Conflict("Direction cannot be changed. Void this voucher and enter a new one.", code="DIRECTION_LOCKED")
     ensure_period_open(db, p.date, data.date)

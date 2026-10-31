@@ -8,6 +8,7 @@ import { useGet } from '@/api/hooks'
 import { DateRangeField, type DateRange } from '@/components/DateField'
 import { PageHeader } from '@/components/PageHeader'
 import { API_DATE, today } from '@/lib/date'
+import { STICKY_HEADER } from '@/components/tableDefaults'
 
 const ENTITIES = ['deliveries', 'purchases', 'payments', 'expenses', 'rentals', 'invoices', 'wage_settlements', 'attendance', 'stock_counts', 'parties', 'staff', 'materials', 'vehicles', 'money_accounts', 'rate_cards', 'users', 'period_locks']
 const COLORS: Record<string, string> = { create: 'green', update: 'blue', void: 'red', delete: 'volcano' }
@@ -56,7 +57,7 @@ export default function AuditPage() {
         <Input allowClear placeholder="Record ID" style={{ width: 110 }} value={entityId} onChange={(e) => { setEntityId(e.target.value.replace(/\D/g, '')); setPage(1) }} />
         <Select allowClear placeholder="Any action" style={{ width: 130 }} value={action} onChange={(v) => { setAction(v); setPage(1) }} options={['create', 'update', 'void', 'delete'].map((a) => ({ value: a, label: a }))} />
       </Space>
-      <Table<AuditLog> size="small" rowKey="id" loading={isLoading} columns={columns} dataSource={data?.items ?? []} scroll={{ x: 'max-content' }}
+      <Table<AuditLog> sticky={STICKY_HEADER} size="small" rowKey="id" loading={isLoading} columns={columns} dataSource={data?.items ?? []} scroll={{ x: 'max-content' }}
         expandable={{ expandedRowRender: (l) => <Diff log={l} /> }}
         pagination={{ current: page, pageSize: 30, total: data?.total ?? 0, onChange: setPage, showSizeChanger: false }} />
     </>

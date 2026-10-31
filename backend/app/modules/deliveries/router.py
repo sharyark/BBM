@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, Response
+import datetime as dt
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.deps import DB, CurrentUser, require_perm
 from app.core.pagination import ListQuery, Page
@@ -26,6 +29,24 @@ def list_deliveries(
         status=status, invoiced=invoiced,
     )  # fmt: skip
     return Page(items=rows, total=total, page=params.page, size=params.size)
+
+
+# Declared before "/{delivery_id}" so "export" is not parsed as an id.
+@router.get("/export", dependencies=[READ])
+def export_deliveries(
+    db: DB,
+    date_from: Annotated[dt.date | None, Query(alias="from")] = None,
+    date_to: Annotated[dt.date | None, Query(alias="to")] = None,
+    customer_id: int | None = None,
+    status: str | None = None,
+    fmt: Annotated[Literal["xlsx", "csv"], Query(alias="format")] = "xlsx",
+):
+    """Day-wise challan backup as Excel or CSV; defaults to today."""
+    from app.modules.reports import queries
+    from app.modules.reports.export import respond
+
+    start, end = queries.export_range(date_from, date_to)
+    return respond(queries.challan_register(db, start, end, customer_id, status), fmt)
 
 
 @router.get("/{delivery_id}", response_model=s.DeliveryOut, dependencies=[READ])
@@ -57,7 +78,7 @@ def void_delivery(delivery_id: int, data: s.VoidIn, db: DB, user: CurrentUser, _
 
 
 @router.get("/{delivery_id}/pdf", dependencies=[READ])
-def download_pdf(delivery_id: int, db: DB):
+def download_pdf(delivery_id: int, db: DB, paper: Literal["a5", "80mm", "58mm"] = "a5"):
     from app.modules.reports import documents
 
-    return documents.challan_pdf(db, delivery_id)
+    return documents.challan_pdf(db, delivery_id, paper)

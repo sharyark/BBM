@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Col, Input, Radio, Row, Select, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useSave } from '@/api/hooks'
 import { useLookups } from '@/api/lookups'
@@ -23,6 +23,7 @@ type Preset = { category: ExpenseForm['category'] }
 function ExpenseFormView({ doc, preset, onDone }: DocFormProps<Expense, Preset>) {
   const lookups = useLookups()
   const clientRef = useRef(crypto.randomUUID())
+  const [editReason, setEditReason] = useState('')
   const { control, handleSubmit } = useForm<ExpenseForm>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
@@ -37,6 +38,7 @@ function ExpenseFormView({ doc, preset, onDone }: DocFormProps<Expense, Preset>)
 
   return (
     <DocFormShell
+      editReason={doc ? { value: editReason, onChange: setEditReason } : undefined}
       saving={save.isPending}
       onSubmit={handleSubmit((v) =>
         save.mutate({
@@ -47,7 +49,7 @@ function ExpenseFormView({ doc, preset, onDone }: DocFormProps<Expense, Preset>)
           money_account_id: v.paid_via === 'money_account' ? v.money_account_id : null,
           party_id: v.paid_via === 'party_credit' ? v.party_id : null,
           notes: v.notes || null,
-          ...(doc ? {} : { client_ref: clientRef.current }),
+          ...(doc ? { edit_reason: editReason.trim() } : { client_ref: clientRef.current }),
         }),
       )}
     >
