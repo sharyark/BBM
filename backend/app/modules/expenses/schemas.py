@@ -3,15 +3,15 @@ import uuid
 from decimal import Decimal
 from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import ConfigDict, model_validator
 
 from app.core.types import PositiveMoney, PositiveQty, QtyIn
-from app.modules.common_schemas import VoidIn  # noqa: F401
+from app.modules.common_schemas import EditableIn, EditInfoOut, VoidIn  # noqa: F401
 
 Category = Literal["diesel", "repair", "tyre", "insurance", "toll", "office", "misc"]
 
 
-class ExpenseIn(BaseModel):
+class ExpenseIn(EditableIn):
     date: dt.date
     category: Category
     vehicle_id: int | None = None
@@ -35,7 +35,7 @@ class ExpenseIn(BaseModel):
         return self
 
 
-class ExpenseOut(BaseModel):
+class ExpenseOut(EditInfoOut):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Response
 
 from app.core.deps import DB, CurrentUser, require_perm
@@ -55,7 +57,7 @@ def void_payment(payment_id: int, data: s.VoidIn, db: DB, user: CurrentUser, _=D
 
 
 @router.get("/{payment_id}/pdf", dependencies=[READ])
-def download_pdf(payment_id: int, db: DB):
+def download_pdf(payment_id: int, db: DB, paper: Literal["a5", "80mm", "58mm"] = "a5"):
     from app.modules.reports import documents
 
-    return documents.payment_pdf(db, payment_id)
+    return documents.payment_pdf(db, payment_id, paper)

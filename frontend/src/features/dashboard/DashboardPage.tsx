@@ -1,74 +1,274 @@
 import {
-  BankOutlined, BellOutlined, CarOutlined, DatabaseOutlined, DollarOutlined, RiseOutlined, TeamOutlined, WalletOutlined, FallOutlined, LineChartOutlined,
+  ArrowDownOutlined, ArrowUpOutlined, BankOutlined, CarOutlined, CheckCircleFilled, ClockCircleOutlined, DatabaseOutlined,
+  DollarOutlined, MinusOutlined, TeamOutlined, WalletOutlined,
 } from '@ant-design/icons'
-import { Alert, Card, Col, Row, Table, Tag, Typography } from 'antd'
+import { Alert, Card, Col, Empty, Row, Skeleton, Typography } from 'antd'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { apiError } from '@/api/client'
 import { useGet } from '@/api/hooks'
 import type { Dashboard } from '@/api/types'
 import { HeroBanner } from '@/components/HeroBanner'
-import { Money } from '@/components/Money'
-import { StatCard } from '@/components/StatCard'
-import { CURRENCY } from '@/lib/config'
-import { formatMoney, formatQty, toNumber } from '@/lib/format'
+import { usePermission } from '@/hooks/usePermission'
+import { formatCurrency, formatQty, formatShort, toNumber } from '@/lib/format'
+import { SalesChart } from './SalesChart'
 
-const cur = (v: string | number | undefined) => `${CURRENCY} ${formatMoney(v ?? 0)}`
-const cardStyle = { borderRadius: 12, borderColor: '#edf0f3', boxShadow: '0 1px 3px rgba(16,38,59,.06)' }
+const GOOD = '#2f7d4f'
+const BAD = '#b23a48'
+const WARN = '#b45309'
+const INK = '#17283a'
+const cardStyle = { borderRadius: 12, borderColor: '#edf0f3', boxShadow: '0 1px 3px rgba(16,38,59,.06)', height: '100%' }
+
+const rs = (v: string | number) => formatCurrency(v).replace(/\.00$/, '')
+
+/** Section heading phrased as the question it answers, so the owner knows what to look at. */
+function Section({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+  return (
+    <section className="dash-section">
+      <div className="dash-section-head">
+        <Typography.Title level={5} style={{ margin: 0 }}>{title}</Typography.Title>
+        <Typography.Text type="secondary">{hint}</Typography.Text>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** "vs yesterday" line: arrow icon carries direction (green when up is good), the words carry the meaning. */
+function Change({ now, before, label, upIsGood = true, money = true }: { now: number; before: number; label: string; upIsGood?: boolean; money?: boolean }) {
+  const diff = now - before
+  const fmt = (v: number) => (money ? rs(v) : String(v))
+  if (diff === 0) return <span className="dash-change"><MinusOutlined /> Same as {label} ({fmt(before)})</span>
+  const up = diff > 0
+  const good = up === upIsGood
+  return (
+    <span className="dash-change">
+      <span style={{ color: good ? GOOD : BAD }}>{up ? <ArrowUpOutlined /> : <ArrowDownOutlined />}</span>{' '}
+      {money ? `${formatShort(Math.abs(diff))} ${up ? 'more' : 'less'}` : `${Math.abs(diff)} ${up ? 'more' : 'fewer'}`} than {label} ({fmt(before)})
+    </span>
+  )
+}
+
+function TodayTile({ label, value, icon, foot, to }: { label: string; value: ReactNode; icon: ReactNode; foot: ReactNode; to?: string }) {
+  const body = (
+    <Card size="small" hoverable={Boolean(to)} style={cardStyle} styles={{ body: { padding: 16 } }}>
+      <div className="dash-tile-label">{icon}{label}</div>
+      <div className="dash-tile-value">{value}</div>
+      <div className="dash-tile-foot">{foot}</div>
+    </Card>
+  )
+  return to ? <Link to={to}>{body}</Link> : body
+}
+
+/** Horizontal bars for one series (who owes most, yard stock value); value sits at the bar's end. */
+function BarList({ rows, empty }: { rows: { key: string | number; label: ReactNode; value: number; text: string; warn?: boolean }[]; empty: string }) {
+  if (!rows.length) return <Typography.Text type="secondary">{empty}</Typography.Text>
+  const max = Math.max(...rows.map((r) => r.value), 1)
+  return (
+    <div className="bar-list">
+      {rows.map((r) => (
+        <div key={r.key} className="bar-row">
+          <div className="bar-label">{r.label}</div>
+          <div className="bar-track">
+            <div className="bar-fill" style={{ width: `${Math.max((r.value / max) * 100, r.value > 0 ? 2 : 0)}%` }} />
+          </div>
+          <span className="bar-value" style={{ color: r.warn ? WARN : undefined }}>{r.text}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+interface Todo { key: string; tone: 'bad' | 'warn'; icon: ReactNode; text: ReactNode; action?: { to: string; label: string } }
 
 export default function DashboardPage() {
-  const { data, isLoading, error } = useGet<Dashboard>('/reports/dashboard', undefined, { staleTime: 10_000 })
+  const { data: d, isLoading, error } = useGet<Dashboard>('/reports/dashboard', undefined, { staleTime: 10_000 })
+  const canKhata = usePermission('report.khata')
   if (error) return <Alert type="error" showIcon message={apiError(error).message} />
-  const d = data
+  if (isLoading || !d) return <><HeroBanner /><Skeleton active paragraph={{ rows: 10 }} /></>
+
+  const n = toNumber
+  const inHand = n(d.cash_in_hand) + n(d.bank_balance)
+  const weOwe = n(d.total_payable) + n(d.staff_payable)
+  const afterSettling = inHand + n(d.total_receivable) - weOwe
+  const monthChange = n(d.sales_prev_month) > 0 ? ((n(d.sales_month) - n(d.sales_prev_month)) / n(d.sales_prev_month)) * 100 : null
+  const working = d.vehicles.filter((v) => v.trips > 0).length
+  const finished = d.stock.filter((s) => n(s.qty) <= 0)
+  const khata = (id: number) => (canKhata ? { to: `/reports/khata?party=${id}`, label: 'Open khata' } : undefined)
+
+  const todos: Todo[] = [
+    ...d.old_udhaar.slice(0, 4).map((u) => ({
+      key: `u${u.party_id}`, tone: u.days > 30 ? 'bad' as const : 'warn' as const, icon: <ClockCircleOutlined />,
+      text: <><strong>{u.name}</strong> owes {rs(u.balance)}, unpaid for <strong>{u.days} days</strong></>, action: khata(u.party_id),
+    })),
+    ...d.advance_low.slice(0, 3).map((a) => ({
+      key: `a${a.party_id}`, tone: 'warn' as const, icon: <WalletOutlined />,
+      text: <><strong>{a.name}</strong>: advance almost used up, only {rs(a.advance)} left. Ask for more before the next trip.</>, action: khata(a.party_id),
+    })),
+    ...finished.map((s) => ({
+      key: `s${s.material}`, tone: 'bad' as const, icon: <DatabaseOutlined />,
+      text: <><strong>{s.material}</strong> is finished in the yard{n(s.qty) < 0 ? ` (short by ${formatQty(-n(s.qty))} ${s.unit})` : ''}. Enter the next purchase.</>,
+      action: { to: '/purchases', label: 'Purchases' },
+    })),
+    ...(n(d.staff_payable) > 0
+      ? [{ key: 'wages', tone: 'warn' as const, icon: <TeamOutlined />, text: <>Wages due to staff: <strong>{rs(d.staff_payable)}</strong></>, action: { to: '/labour', label: 'Labour & wages' } }]
+      : []),
+  ]
+
   return (
-    <>
-      <HeroBanner date={d?.date} trips={d?.trips_today} />
-      <Row gutter={[12, 12]}>
-        <Col xs={24} sm={12} lg={8}><StatCard title="Trips today" value={d?.trips_today ?? 0} icon={<CarOutlined />} tone="blue" to="/challans" /></Col>
-        <Col xs={24} sm={12} lg={8}><StatCard title="Sales today" value={cur(d?.sales_today)} icon={<DollarOutlined />} tone="green" /></Col>
-        <Col xs={24} sm={12} lg={8}><StatCard title="Sales this month" value={cur(d?.sales_month)} icon={<LineChartOutlined />} tone="green" /></Col>
-        <Col xs={24} sm={12} lg={8}><StatCard title="Cash in hand" value={cur(d?.cash_in_hand)} icon={<WalletOutlined />} tone="amber" valueColor={toNumber(d?.cash_in_hand) < 0 ? '#cf1322' : undefined} to="/reports/cash-book" /></Col>
-        <Col xs={24} sm={12} lg={8}><StatCard title="Bank / wallet" value={cur(d?.bank_balance)} icon={<BankOutlined />} tone="teal" to="/reports/cash-book" /></Col>
-        <Col xs={24} sm={12} lg={8}><StatCard title="Yard stock value" value={cur(d?.stock_value)} icon={<DatabaseOutlined />} tone="purple" to="/stock" /></Col>
-        <Col xs={24} sm={12} lg={8}><StatCard title="Receivable: customers owe us" value={cur(d?.total_receivable)} icon={<RiseOutlined />} tone="blue" to="/reports/outstanding" /></Col>
-        <Col xs={24} sm={12} lg={8}><StatCard title="Payable: we owe suppliers" value={cur(d?.total_payable)} icon={<FallOutlined />} tone="amber" /></Col>
-        <Col xs={24} sm={12} lg={8}><StatCard title="Staff wages payable" value={cur(d?.staff_payable)} icon={<TeamOutlined />} tone="slate" to="/labour" /></Col>
-      </Row>
-      {d && (d.advance_low.length > 0 || d.old_udhaar.length > 0) && (
-        <Card size="small" title={<><BellOutlined style={{ color: '#d46b08', marginRight: 8 }} />Payment reminders</>} style={{ ...cardStyle, marginTop: 12 }}>
-          <Row gutter={[16, 8]}>
-            <Col xs={24} lg={12}>
-              <Typography.Text strong>Advance running low</Typography.Text>
-              <Typography.Text type="secondary"> (under <Money value={d.advance_low_threshold} />)</Typography.Text>
-              <Table size="small" rowKey="party_id" pagination={false} dataSource={d.advance_low} locale={{ emptyText: 'No advance is running low' }}
-                columns={[{ title: 'Customer', render: (_, r) => <Link to={`/reports/khata?party=${r.party_id}`}>{r.name}</Link> }, { title: 'Advance left', dataIndex: 'advance', align: 'right', render: (v) => <Money value={v} bold /> }]} />
-            </Col>
-            <Col xs={24} lg={12}>
-              <Typography.Text strong>Udhaar unpaid for over {d.credit_overdue_days} days</Typography.Text>
-              <Table size="small" rowKey="party_id" pagination={false} dataSource={d.old_udhaar} locale={{ emptyText: 'No old udhaar' }}
-                columns={[
-                  { title: 'Customer', render: (_, r) => <Link to={`/reports/khata?party=${r.party_id}`}>{r.name}</Link> },
-                  { title: 'Days', dataIndex: 'days', align: 'right', render: (v: number) => <Tag color={v > 30 ? 'red' : 'orange'}>{v} days</Tag> },
-                  { title: 'Owes', dataIndex: 'balance', align: 'right', render: (v) => <Money value={v} bold /> },
-                ]} />
-            </Col>
-          </Row>
+    <div className="dash">
+      <HeroBanner date={d.date} trips={d.trips_today} />
+
+      <Section title="Today" hint="What happened today, compared with yesterday">
+        <Row gutter={[12, 12]}>
+          <Col xs={12} lg={6}>
+            <TodayTile label="Trips" icon={<CarOutlined />} value={d.trips_today} to="/challans"
+              foot={<Change now={d.trips_today} before={d.trips_yesterday} label="yesterday" money={false} />} />
+          </Col>
+          <Col xs={12} lg={6}>
+            <TodayTile label="Sales" icon={<DollarOutlined />} value={rs(d.sales_today)}
+              foot={<Change now={n(d.sales_today)} before={n(d.sales_yesterday)} label="yesterday" />} />
+          </Col>
+          <Col xs={12} lg={6}>
+            <TodayTile label="Money received" icon={<ArrowDownOutlined style={{ color: GOOD }} />} value={rs(d.money_in_today)} to="/payments"
+              foot={<span className="dash-change">Came into cash and bank today</span>} />
+          </Col>
+          <Col xs={12} lg={6}>
+            <TodayTile label="Money paid out" icon={<ArrowUpOutlined style={{ color: BAD }} />} value={rs(d.money_out_today)} to="/expenses"
+              foot={<span className="dash-change">Went out of cash and bank today</span>} />
+          </Col>
+        </Row>
+      </Section>
+
+      <Section title="Needs attention" hint="Things to follow up on, most urgent first">
+        <Card size="small" style={cardStyle} styles={{ body: { padding: todos.length ? 6 : 16 } }}>
+          {todos.length === 0 ? (
+            <div className="todo-clear"><CheckCircleFilled style={{ color: GOOD }} /> All clear. No old udhaar, no finished stock, no wages due.</div>
+          ) : (
+            todos.map((t) => (
+              <div key={t.key} className="todo-row">
+                <span className={`todo-icon todo-${t.tone}`}>{t.icon}</span>
+                <span className="todo-text">{t.text}</span>
+                {t.action && <Link className="todo-action" to={t.action.to}>{t.action.label}</Link>}
+              </div>
+            ))
+          )}
         </Card>
-      )}
-      <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="Today's trips by material" loading={isLoading} style={cardStyle}>
-            <Table size="small" rowKey="material" pagination={false} dataSource={d?.trips_by_material ?? []} locale={{ emptyText: 'No trips yet today' }}
-              columns={[{ title: 'Material', dataIndex: 'material' }, { title: 'Trips', dataIndex: 'trips', align: 'right' }, { title: 'Quantity', align: 'right', render: (_, r) => `${formatQty(r.qty)} ${r.unit}` }]} />
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="Biggest outstanding balances" loading={isLoading} style={cardStyle}>
-            <Table size="small" rowKey="party_id" pagination={false} dataSource={d?.top_debtors ?? []} locale={{ emptyText: 'Nobody owes anything' }}
-              columns={[{ title: 'Customer', render: (_, r) => <Link to={`/reports/khata?party=${r.party_id}`}>{r.name}</Link> }, { title: 'Owes', dataIndex: 'balance', align: 'right', render: (v) => <Money value={v} bold /> }]} />
-            {d && toNumber(d.staff_advances) > 0 && <Typography.Text type="secondary">Advances out to staff: <Money value={d.staff_advances} /></Typography.Text>}
-          </Card>
-        </Col>
-      </Row>
-    </>
+      </Section>
+
+      <Section title="Where is the money" hint="Cash in hand, what customers owe you, and what you owe">
+        <Row gutter={[12, 12]}>
+          <Col xs={24} lg={8}>
+            <Card size="small" style={cardStyle} title={<><WalletOutlined /> In hand</>}>
+              <div className="dash-big">{rs(inHand)}</div>
+              <div className="kv"><span><WalletOutlined /> Cash</span><strong>{rs(d.cash_in_hand)}</strong></div>
+              <div className="kv"><span><BankOutlined /> Bank / wallet</span><strong>{rs(d.bank_balance)}</strong></div>
+              <div className="dash-settle">
+                <Typography.Text type="secondary">If everyone pays you and you pay everyone, you are left with</Typography.Text>
+                <div className="dash-settle-value" style={{ color: afterSettling < 0 ? BAD : INK }}>{rs(afterSettling)}</div>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>Plus yard stock worth {rs(d.stock_value)}</Typography.Text>
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} lg={8}>
+            <Card size="small" style={cardStyle} title="Customers owe you (udhaar)">
+              <div className="dash-big">{rs(d.total_receivable)}</div>
+              <Typography.Text type="secondary" className="dash-sub">Biggest balances</Typography.Text>
+              <BarList empty="Nobody owes you anything" rows={d.top_debtors.map((r) => ({
+                key: r.party_id, value: n(r.balance), text: formatShort(r.balance),
+                label: canKhata ? <Link to={`/reports/khata?party=${r.party_id}`}>{r.name}</Link> : r.name,
+              }))} />
+            </Card>
+          </Col>
+          <Col xs={24} lg={8}>
+            <Card size="small" style={cardStyle} title="You owe">
+              <div className="dash-big">{rs(weOwe)}</div>
+              <div className="kv"><span>Suppliers</span><strong>{rs(d.total_payable)}</strong></div>
+              <div className="kv"><span>Staff wages</span><strong>{rs(d.staff_payable)}</strong></div>
+              <Typography.Text type="secondary" className="dash-sub">Biggest supplier balances</Typography.Text>
+              <BarList empty="You owe no supplier" rows={d.top_owed.map((r) => ({
+                key: r.party_id, value: n(r.balance), text: formatShort(r.balance),
+                label: canKhata ? <Link to={`/reports/khata?party=${r.party_id}`}>{r.name}</Link> : r.name,
+              }))} />
+            </Card>
+          </Col>
+        </Row>
+      </Section>
+
+      <Section title="How business is going" hint="Sales over the last two weeks and this month against last month">
+        <Row gutter={[12, 12]}>
+          <Col xs={24} lg={d.profit_month ? 16 : 24}>
+            <Card size="small" style={cardStyle} title="Sales, last 14 days">
+              <div className="month-line">
+                <span>This month so far <strong>{rs(d.sales_month)}</strong></span>
+                {monthChange !== null && (
+                  <span className="dash-change">
+                    <span style={{ color: monthChange >= 0 ? GOOD : BAD }}>{monthChange >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}</span>{' '}
+                    {Math.abs(monthChange).toFixed(0)}% {monthChange >= 0 ? 'more' : 'less'} than the same days last month ({formatShort(d.sales_prev_month)})
+                  </span>
+                )}
+              </div>
+              <SalesChart days={d.daily} />
+            </Card>
+          </Col>
+          {d.profit_month && (
+            <Col xs={24} lg={8}>
+              <Card size="small" style={cardStyle} title="Profit this month">
+                <div className="dash-big" style={{ color: n(d.profit_month.profit) < 0 ? BAD : INK }}>{rs(d.profit_month.profit)}</div>
+                <Typography.Text type="secondary">{n(d.profit_month.profit) >= 0 ? 'Earned after all costs' : 'Loss after all costs'}</Typography.Text>
+                <div className="kv" style={{ marginTop: 12 }}><span>Income (sales, freight, rent)</span><strong>{rs(d.profit_month.income)}</strong></div>
+                <div className="kv"><span>Costs (material, diesel, wages...)</span><strong>{rs(d.profit_month.expense)}</strong></div>
+                {n(d.profit_month.income) > 0 && (
+                  <div className="margin-meter" aria-label="Profit share of income">
+                    <div className="margin-track"><div className="margin-fill" style={{ width: `${Math.min(Math.max((n(d.profit_month.profit) / n(d.profit_month.income)) * 100, 0), 100)}%` }} /></div>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      You keep about <strong>Rs {Math.max(Math.round((n(d.profit_month.profit) / n(d.profit_month.income)) * 100), 0)}</strong> of every Rs 100 earned
+                    </Typography.Text>
+                  </div>
+                )}
+                <Link to="/reports/profit-loss" style={{ display: 'inline-block', marginTop: 10 }}>Full profit & loss</Link>
+              </Card>
+            </Col>
+          )}
+        </Row>
+      </Section>
+
+      <Section title="Vehicles and yard" hint="Which vehicles worked today and what material is in the yard">
+        <Row gutter={[12, 12]}>
+          <Col xs={24} lg={12}>
+            <Card size="small" style={cardStyle} title={`${working} of ${d.vehicles.length} vehicles working today`}>
+              {d.vehicles.length === 0 ? <Empty description="No vehicles yet" /> : (
+                <div className="fleet">
+                  {d.vehicles.map((v) => (
+                    <div key={v.id} className={`fleet-chip ${v.trips ? 'on' : 'off'}`}>
+                      <CarOutlined />
+                      <div>
+                        <div className="fleet-name">{v.name}</div>
+                        <div className="fleet-trips">{v.trips ? `${v.trips} trip${v.trips === 1 ? '' : 's'}` : 'Idle'}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {d.trips_by_material.length > 0 && (
+                <Typography.Paragraph type="secondary" style={{ margin: '12px 0 0' }}>
+                  Sent out today: {d.trips_by_material.map((m) => `${m.material} ${formatQty(m.qty)} ${m.unit}`).join(' · ')}
+                </Typography.Paragraph>
+              )}
+            </Card>
+          </Col>
+          <Col xs={24} lg={12}>
+            <Card size="small" style={cardStyle} title={<>Yard stock <Typography.Text type="secondary" style={{ fontWeight: 400 }}>worth {rs(d.stock_value)}</Typography.Text></>}
+              extra={<Link to="/stock">Open</Link>}>
+              <BarList empty="No materials yet" rows={d.stock.map((s) => ({
+                key: s.material, value: Math.max(n(s.value), 0), warn: n(s.qty) <= 0,
+                label: s.material,
+                text: n(s.qty) <= 0 ? `Finished${n(s.qty) < 0 ? ` (${formatQty(s.qty)} ${s.unit})` : ''}` : `${formatQty(s.qty)} ${s.unit} · ${formatShort(s.value)}`,
+              }))} />
+            </Card>
+          </Col>
+        </Row>
+      </Section>
+    </div>
   )
 }

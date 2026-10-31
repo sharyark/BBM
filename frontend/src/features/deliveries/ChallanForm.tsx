@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Alert, App, Button, Col, Form, Input, Row, Segmented, Select, Space, Tag, Typography } from 'antd'
 import type { RefSelectProps } from 'antd/es/select'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, apiError } from '@/api/client'
@@ -10,11 +10,13 @@ import { useLookups } from '@/api/lookups'
 import type { Delivery, LoadUnit, Material, MoneyAccount, PartyBalance, StockItem, VehicleType } from '@/api/types'
 import { DateField } from '@/components/DateField'
 import { MoneyInput, QtyInput } from '@/components/DecimalInput'
+import { EditReasonField, editReasonError } from '@/components/EditReasonField'
 import { EntitySelect, optionsOf } from '@/components/EntitySelect'
 import { Field } from '@/components/Field'
 import { Money } from '@/components/Money'
 import { QuickAddParty, QuickAddSite } from '@/components/QuickAdd'
 import { usePermission } from '@/hooks/usePermission'
+import { useVehicleDriver } from '@/hooks/useVehicleDriver'
 import { formatCurrency, formatQty, toNumber } from '@/lib/format'
 import { today } from '@/lib/date'
 import { deliverySchema, type DeliveryForm } from '@/lib/schemas'
@@ -109,6 +111,8 @@ export default function ChallanForm({ delivery, onSaved, onPrint }: Props) {
   const extraRateTouched = useRef(editing)
   const [rateSource, setRateSource] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [editReason, setEditReason] = useState('')
+  const [triedSave, setTriedSave] = useState(false)
   const canAdd = usePermission('masters.write')
   const [quick, setQuick] = useState<{ kind: 'customer' | 'site'; name: string } | null>(null)
 
@@ -242,6 +246,9 @@ export default function ChallanForm({ delivery, onSaved, onPrint }: Props) {
   }, [sites, editing, setValue])
 
   const vehicles = useMemo(() => lookups.vehicles.filter((v) => v.type === vehicleType), [lookups.vehicles, vehicleType])
+  const [vehicleId, driverId] = useWatch({ control, name: ['vehicle_id', 'driver_id'] })
+  const setDriver = useCallback((id: number | null) => setValue('driver_id', id), [setValue])
+  const driver = useVehicleDriver({ vehicleId, date, driverId, setDriver, editing })
 
   function changeVehicleType(t: VehicleType) {
     setVehicleType(t)
@@ -249,6 +256,7 @@ export default function ChallanForm({ delivery, onSaved, onPrint }: Props) {
     if (current && current.type !== t) {
       setValue('vehicle_id', null)
       setValue('driver_id', null)
+      driver.release()
     }
     // the rate is per load, so a different vehicle means a different rate
     rateTouched.current = false
@@ -264,6 +272,8 @@ export default function ChallanForm({ delivery, onSaved, onPrint }: Props) {
   const advanceLow = !editing && advance > 0 && total > 0 && after <= 0 && -after < toNumber(khata?.advance_low_threshold)
 
   async function submit(values: DeliveryForm, allowNegative = false) {
+    setTriedSave(true)
+    if (editing && editReasonError(editReason)) return
     setSaving(true)
     try {
       const { with_cement, other_half_id, extra_qty, extra_rate, pay: payHow, paid_amount, money_account_id, ...rest } = values
@@ -288,7 +298,7 @@ export default function ChallanForm({ delivery, onSaved, onPrint }: Props) {
         ...(paid > 0
           ? { payment: { amount: paid.toFixed(2), money_account_id, mode: modeOf(lookups.moneyAccountById.get(money_account_id ?? -1)) } }
           : {}),
-        ...(editing ? {} : { client_ref: clientRef.current }),
+        ...(editing ? { edit_reason: editReason.trim() } : { client_ref: clientRef.current }),
       }
       const { data } = editing
         ? await api.put<Delivery>(`/deliveries/${delivery!.id}`, body)
@@ -303,6 +313,7 @@ export default function ChallanForm({ delivery, onSaved, onPrint }: Props) {
         extraRateTouched.current = false
         setRateSource(null)
         setUdhaarOk(false)
+        driver.release()
         reset(blank(last))
         setTimeout(() => customerRef.current?.focus(), 50)
       }
@@ -385,17 +396,17 @@ export default function ChallanForm({ delivery, onSaved, onPrint }: Props) {
                 value={f.value}
                 placeholder={`Select ${typeInfo.label.toLowerCase()}`}
                 onChange={(v) => {
+                  driver.release()
                   f.onChange(v)
-                  const defaultDriver = lookups.staff.find((s) => s.default_vehicle_id === v && (s.role === 'driver' || s.role === 'operator'))
-                  if (v && defaultDriver && !getValues('driver_id')) setValue('driver_id', defaultDriver.id)
+                  if (!v) setValue('driver_id', null)
                 }}
               />
             )}
           </Field>
         </Col>
         <Col xs={12} sm={6} lg={4}>
-          <Field control={control} name="driver_id" label="Driver">
-            {(f) => <EntitySelect id={f.id} options={optionsOf(lookups.drivers)} value={f.value} onChange={f.onChange} />}
+          <Field control={control} name="driver_id" label="Driver" extra={driver.hint}>
+            {(f) => <EntitySelect id={f.id} options={driver.options} value={f.value} onChange={(v) => { driver.onPick(); f.onChange(v) }} />}
           </Field>
         </Col>
       </Row>
@@ -592,6 +603,7 @@ export default function ChallanForm({ delivery, onSaved, onPrint }: Props) {
           message={after === 0 ? 'This challan uses up the whole advance.' : <>Advance is running low: only <Money value={-after} /> will be left after this challan.</>}
         />
       )}
+      {editing && <EditReasonField value={editReason} onChange={setEditReason} showError={triedSave} />}
       <Row gutter={12} align="bottom">
         <Col xs={24} lg={12}>
           <Field control={control} name="notes" label="Notes">{(f) => <Input {...f} value={f.value ?? ''} maxLength={500} />}</Field>

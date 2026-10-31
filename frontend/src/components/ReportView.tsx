@@ -3,6 +3,7 @@ import type { ColumnsType } from 'antd/es/table'
 import type { ReportColumn, ReportData } from '@/api/types'
 import { formatDate } from '@/lib/date'
 import { formatDrCr, formatMoney, formatQty } from '@/lib/format'
+import { STICKY_HEADER } from './tableDefaults'
 
 type Cell = string | number | null
 
@@ -41,6 +42,7 @@ export function ReportView({ data, loading }: { data?: ReportData; loading?: boo
   const totals = data?.totals
   return (
     <Table
+      sticky={STICKY_HEADER}
       size="small"
       loading={loading}
       columns={columns}

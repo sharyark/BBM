@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, Response
+import datetime as dt
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.deps import DB, CurrentUser, require_perm
 from app.core.pagination import ListQuery, Page
@@ -12,6 +15,24 @@ router = APIRouter(prefix="/purchases", tags=["purchases"])
 def list_purchases(db: DB, params: ListQuery, supplier_id: int | None = None, status: str | None = None):
     rows, total = service.list_purchases(db, params, supplier_id, status)
     return Page(items=rows, total=total, page=params.page, size=params.size)
+
+
+# Declared before "/{purchase_id}" so "export" is not parsed as an id.
+@router.get("/export", dependencies=[Depends(require_perm("masters.read"))])
+def export_purchases(
+    db: DB,
+    date_from: Annotated[dt.date | None, Query(alias="from")] = None,
+    date_to: Annotated[dt.date | None, Query(alias="to")] = None,
+    supplier_id: int | None = None,
+    status: str | None = None,
+    fmt: Annotated[Literal["xlsx", "csv"], Query(alias="format")] = "xlsx",
+):
+    """Day-wise purchase backup as Excel or CSV; defaults to today."""
+    from app.modules.reports import queries
+    from app.modules.reports.export import respond
+
+    start, end = queries.export_range(date_from, date_to)
+    return respond(queries.purchase_register(db, start, end, supplier_id, status), fmt)
 
 
 @router.get("/{purchase_id}", response_model=s.PurchaseOut, dependencies=[Depends(require_perm("masters.read"))])

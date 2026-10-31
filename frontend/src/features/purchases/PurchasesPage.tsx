@@ -2,7 +2,7 @@ import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button, Col, Input, Radio, Row, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { useLookups } from '@/api/lookups'
 import { useSave } from '@/api/hooks'
@@ -12,10 +12,12 @@ import { MoneyInput, QtyInput } from '@/components/DecimalInput'
 import { DocFormShell } from '@/components/DocFormShell'
 import { DocPage, type DocFormProps } from '@/components/DocPage'
 import { EntitySelect, optionsOf } from '@/components/EntitySelect'
+import { ExportCard } from '@/components/ExportCard'
 import { Field } from '@/components/Field'
 import { Money } from '@/components/Money'
 import { QuickAddParty } from '@/components/QuickAdd'
 import { usePermission } from '@/hooks/usePermission'
+import { useVehicleDriver } from '@/hooks/useVehicleDriver'
 import { formatDate, today } from '@/lib/date'
 import { formatQty, toNumber } from '@/lib/format'
 import { purchaseSchema, type PurchaseForm } from '@/lib/schemas'
@@ -23,6 +25,7 @@ import { purchaseSchema, type PurchaseForm } from '@/lib/schemas'
 function PurchaseFormView({ doc, onDone }: DocFormProps<Purchase, undefined>) {
   const lookups = useLookups()
   const clientRef = useRef(crypto.randomUUID())
+  const [editReason, setEditReason] = useState('')
   const canAdd = usePermission('masters.write')
   const [adding, setAdding] = useState<string | null>(null)
   const { control, handleSubmit, setValue, getValues } = useForm<PurchaseForm>({
@@ -38,14 +41,18 @@ function PurchaseFormView({ doc, onDone }: DocFormProps<Purchase, undefined>) {
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
   const lines = useWatch({ control, name: 'lines' })
   const transportBy = useWatch({ control, name: 'transport_by' })
+  const [date, vehicleId, driverId] = useWatch({ control, name: ['date', 'vehicle_id', 'driver_id'] })
+  const setDriver = useCallback((id: number | null) => setValue('driver_id', id), [setValue])
+  const driver = useVehicleDriver({ vehicleId: transportBy === 'own' ? vehicleId : null, date, driverId, setDriver, editing: Boolean(doc) })
   const total = lines.reduce((s, l) => s + toNumber(l?.qty) * toNumber(l?.rate), 0)
   const save = useSave<object>(doc ? 'put' : 'post', doc ? `/purchases/${doc.id}` : '/purchases', { successMessage: 'Purchase saved', onSuccess: onDone })
 
   return (
     <DocFormShell
+      editReason={doc ? { value: editReason, onChange: setEditReason } : undefined}
       saving={save.isPending}
       onSubmit={handleSubmit((v) =>
-        save.mutate({ ...v, supplier_slip_no: v.supplier_slip_no || null, notes: v.notes || null, vehicle_id: transportBy === 'own' ? v.vehicle_id || null : null, driver_id: transportBy === 'own' ? v.driver_id || null : null, ...(doc ? {} : { client_ref: clientRef.current }) }),
+        save.mutate({ ...v, supplier_slip_no: v.supplier_slip_no || null, notes: v.notes || null, vehicle_id: transportBy === 'own' ? v.vehicle_id || null : null, driver_id: transportBy === 'own' ? v.driver_id || null : null, ...(doc ? { edit_reason: editReason.trim() } : { client_ref: clientRef.current }) }),
       )}
       extra={<Typography.Text>Total: <Typography.Text strong><Money value={total} /></Typography.Text></Typography.Text>}
     >
@@ -60,8 +67,8 @@ function PurchaseFormView({ doc, onDone }: DocFormProps<Purchase, undefined>) {
         </Col>
         {transportBy === 'own' && (
           <>
-            <Col xs={24} sm={12}><Field control={control} name="vehicle_id" label="Vehicle">{(f) => <EntitySelect id={f.id} options={optionsOf(lookups.vehicles)} value={f.value} onChange={f.onChange} />}</Field></Col>
-            <Col xs={24} sm={12}><Field control={control} name="driver_id" label="Driver">{(f) => <EntitySelect id={f.id} options={optionsOf(lookups.drivers)} value={f.value} onChange={f.onChange} />}</Field></Col>
+            <Col xs={24} sm={12}><Field control={control} name="vehicle_id" label="Vehicle">{(f) => <EntitySelect id={f.id} options={optionsOf(lookups.vehicles)} value={f.value} onChange={(v) => { driver.release(); f.onChange(v); if (!v) setValue('driver_id', null) }} />}</Field></Col>
+            <Col xs={24} sm={12}><Field control={control} name="driver_id" label="Driver" extra={driver.hint}>{(f) => <EntitySelect id={f.id} options={driver.options} value={f.value} onChange={(v) => { driver.onPick(); f.onChange(v) }} />}</Field></Col>
           </>
         )}
       </Row>
@@ -110,6 +117,7 @@ export default function PurchasesPage() {
       newButtons={[{ label: 'New purchase' }]}
       filters={[{ param: 'supplier_id', placeholder: 'All suppliers', options: optionsOf(lookups.suppliers) }]}
       modalWidth={860}
+      beforeList={<ExportCard endpoint="/purchases" noun="purchase" />}
     />
   )
 }

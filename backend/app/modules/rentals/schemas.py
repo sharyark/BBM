@@ -3,13 +3,13 @@ import uuid
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 
 from app.core.types import PositiveMoney, PositiveQty
-from app.modules.common_schemas import VoidIn  # noqa: F401
+from app.modules.common_schemas import EditableIn, EditInfoOut, VoidIn  # noqa: F401
 
 
-class RentalIn(BaseModel):
+class RentalIn(EditableIn):
     date: dt.date
     customer_id: int
     site_id: int | None = None
@@ -22,7 +22,7 @@ class RentalIn(BaseModel):
     client_ref: uuid.UUID | None = None
 
 
-class RentalOut(BaseModel):
+class RentalOut(EditInfoOut):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

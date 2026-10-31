@@ -12,6 +12,7 @@ from app.core.errors import Conflict, DomainError, NotFound
 from app.core.money import money
 from app.modules.masters.models import Material, MoneyAccount, Party, RateCard, Site, Staff, Vehicle
 from app.modules.masters.schemas import (
+    DriverSuggestion,
     MaterialIn,
     MoneyAccountIn,
     PartyBalance,
@@ -196,3 +197,58 @@ def attach_balances(db: Session, rows: list, out_items: list) -> None:
     balances = account_balances(db, [r.account_id for r in rows if r.account_id])
     for row, out in zip(rows, out_items, strict=True):
         out.balance = balances.get(row.account_id, Decimal("0")) if row.account_id else Decimal("0")
+
+
+DRIVING_ROLES = ("driver", "operator")
+
+
+def suggest_driver(db: Session, vehicle_id: int, on: dt.date) -> DriverSuggestion:
+    """Driver for a vehicle on a day: a substitute already used that day wins, else the regular driver.
+
+    A driver marked absent in attendance is never suggested; the form then asks the munshi to pick one,
+    and that pick becomes "today's" driver for the vehicle's next entries without any extra step.
+    """
+    # Imported here: these modules import masters models, so a top-level import would be circular.
+    from app.modules.deliveries.models import Delivery
+    from app.modules.labour.models import Attendance
+    from app.modules.purchases.models import Purchase
+    from app.modules.rentals.models import Rental
+
+    if db.get(Vehicle, vehicle_id) is None:
+        raise NotFound("Vehicle not found")
+    absent = set(
+        db.scalars(
+            select(Attendance.staff_id)
+            .join(Staff, Staff.id == Attendance.staff_id)
+            .where(Attendance.date == on, Attendance.status == "absent", Staff.role.in_(DRIVING_ROLES))
+        )
+    )
+    regular = db.scalar(
+        select(Staff.id)
+        .where(Staff.default_vehicle_id == vehicle_id, Staff.is_active, Staff.role.in_(DRIVING_ROLES))
+        .order_by(Staff.id)
+    )
+
+    latest: tuple[dt.datetime, int] | None = None
+    for model, column in ((Delivery, Delivery.driver_id), (Purchase, Purchase.driver_id), (Rental, Rental.operator_id)):
+        row = db.execute(
+            select(model.updated_at, column)
+            .where(model.vehicle_id == vehicle_id, model.date == on, model.status == "active", column.is_not(None))
+            .order_by(model.updated_at.desc())
+            .limit(1)
+        ).first()
+        if row and (latest is None or row[0] > latest[0]):
+            latest = (row[0], row[1])
+
+    driver_id, source = None, None
+    if latest and latest[1] not in absent:
+        driver_id, source = latest[1], "today"
+    elif regular and regular not in absent:
+        driver_id, source = regular, "regular"
+    return DriverSuggestion(
+        driver_id=driver_id,
+        source=source,
+        regular_driver_id=regular,
+        regular_absent=regular is not None and regular in absent,
+        absent_driver_ids=sorted(absent),
+    )

@@ -7,7 +7,14 @@ function filenameFrom(disposition: string | undefined, fallback: string): string
 
 /** Fetch with the auth header (a plain <a href> can't send it), then open or save the file. */
 export async function openFile(url: string, params: Record<string, unknown> = {}, fallbackName = 'download') {
-  const res = await api.get<Blob>(url, { params, responseType: 'blob' })
+  const res = await api.get<Blob>(url, { params, responseType: 'blob' }).catch(async (err) => {
+    // Error bodies arrive as a Blob too; turn them back into JSON so apiError() shows the server's message.
+    const data = err?.response?.data
+    if (data instanceof Blob) {
+      try { err.response.data = JSON.parse(await data.text()) } catch { /* not JSON: keep the generic error */ }
+    }
+    throw err
+  })
   const blob = res.data
   const objectUrl = URL.createObjectURL(blob)
   const name = filenameFrom(res.headers['content-disposition'], fallbackName)

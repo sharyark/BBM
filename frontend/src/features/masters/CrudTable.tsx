@@ -1,6 +1,6 @@
 import { EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Button, Form, Input, Modal, Select, Switch, Table } from 'antd'
+import { Button, Form, Grid, Input, Modal, Select, Switch, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -12,6 +12,7 @@ import { EntitySelect, type Option } from '@/components/EntitySelect'
 import { useDebounce } from '@/hooks/useDebounce'
 import { usePermission } from '@/hooks/usePermission'
 import { moneyField, optionalMoney, qtyField } from '@/lib/schemas'
+import { STICKY_HEADER } from '@/components/tableDefaults'
 
 export interface FieldSpec {
   name: string
@@ -109,12 +110,15 @@ export function CrudTable<T extends Row>({
     setEditing(row)
   }
 
+  const wide = Grid.useBreakpoint().md ?? false
   const cols: ColumnsType<T> = [
     ...columns,
     {
       title: '',
       key: 'actions',
       align: 'right',
+      // Keep actions in view while scrolling wide tables; on a phone a pinned column would hide the data.
+      fixed: wide ? 'right' : undefined,
       render: (_, row) => (
         <>
           {rowActions?.(row)}
@@ -145,6 +149,7 @@ export function CrudTable<T extends Row>({
         )}
       </div>
       <Table<T>
+        sticky={STICKY_HEADER}
         size="small"
         rowKey="id"
         loading={isLoading}

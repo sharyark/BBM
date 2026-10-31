@@ -12,7 +12,7 @@ from app.core.errors import Conflict, DomainError, NotFound
 from app.core.money import money
 from app.core.money import qty as q3
 from app.core.pagination import ListParams, apply_sort, paginate
-from app.modules.common import ensure_active, find_by_client_ref, get_or_404, mark_void
+from app.modules.common import ensure_active, find_by_client_ref, get_or_404, mark_edited, mark_void
 from app.modules.deliveries.models import Delivery
 from app.modules.deliveries.schemas import DeliveryIn
 from app.modules.masters import service as masters
@@ -152,6 +152,8 @@ def create(db: Session, data: DeliveryIn) -> tuple[Delivery, bool]:
 def update(db: Session, delivery_id: int, data: DeliveryIn) -> Delivery:
     d = get_or_404(db, Delivery, delivery_id, "Challan")
     ensure_active(d)
+    # Before any other check, so a missing reason is the first thing the munshi is told.
+    mark_edited(db, d, data.edit_reason)
     _ensure_not_invoiced(d)
     customer, material, extra = _validate(db, data)
     ensure_period_open(db, d.date, data.date)

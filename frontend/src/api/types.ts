@@ -112,6 +112,10 @@ interface DocBase {
   id: number
   status: 'active' | 'void'
   void_reason: string | null
+  /** Last edit (challan, purchase, rental, payment, expense); 0 / null when never edited. */
+  edit_count?: number
+  edit_reason?: string | null
+  edited_at?: string | null
   journal_id: number | null
   notes: string | null
 }
@@ -306,9 +310,16 @@ export interface ReportData {
 export interface Dashboard {
   date: string
   trips_today: number
+  trips_yesterday: number
   trips_by_material: { material: string; unit: string; trips: number; qty: Decimal }[]
   sales_today: Decimal
+  sales_yesterday: Decimal
   sales_month: Decimal
+  /** Same days of last month (1st to today's date), for the month comparison. */
+  sales_prev_month: Decimal
+  daily: { date: string; sales: Decimal; trips: number }[]
+  money_in_today: Decimal
+  money_out_today: Decimal
   cash_in_hand: Decimal
   bank_balance: Decimal
   total_receivable: Decimal
@@ -316,11 +327,16 @@ export interface Dashboard {
   staff_payable: Decimal
   staff_advances: Decimal
   stock_value: Decimal
+  stock: { material: string; unit: string; qty: Decimal; value: Decimal }[]
+  vehicles: { id: number; name: string; type: VehicleType; trips: number }[]
   top_debtors: { party_id: number; name: string; balance: Decimal }[]
+  top_owed: { party_id: number; name: string; balance: Decimal }[]
   advance_low: { party_id: number; name: string; advance: Decimal }[]
   old_udhaar: { party_id: number; name: string; balance: Decimal; days: number }[]
   advance_low_threshold: Decimal
   credit_overdue_days: number
+  /** Owner only (needs report.profit); null for the munshi. */
+  profit_month: { income: Decimal; expense: Decimal; profit: Decimal } | null
 }
 
 /** A customer's khata in one number: positive = owes us (udhaar), negative = advance with us. */
@@ -363,4 +379,12 @@ export interface TrialBalance {
   total_debit: Decimal
   total_credit: Decimal
   balanced: boolean
+}
+
+export interface DriverSuggestion {
+  driver_id: number | null
+  source: 'today' | 'regular' | null
+  regular_driver_id: number | null
+  regular_absent: boolean
+  absent_driver_ids: number[]
 }

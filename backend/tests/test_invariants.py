@@ -39,7 +39,13 @@ def test_invariants_survive_edits_voids_and_counts(world, db):
     purchase(world, "20", "2000")
     purchase(world, "10", "2500")
     docs = [challan(world, str(q), freight_amount="100") for q in (1, 2, 3)]
-    body = {"date": str(TODAY), "customer_id": world.customer["id"], "material_id": world.rait["id"], "qty": "5"}
+    body = {
+        "date": str(TODAY),
+        "customer_id": world.customer["id"],
+        "material_id": world.rait["id"],
+        "qty": "5",
+        "edit_reason": "qty corrected",
+    }
     world.c.put(f"/api/v1/deliveries/{docs[0]['id']}", json=body, headers=world.h)
     world.post(f"/deliveries/{docs[1]['id']}/void", {"reason": "mistake entry"}, expect=200)
     p = world.get("/purchases")["items"][-1]

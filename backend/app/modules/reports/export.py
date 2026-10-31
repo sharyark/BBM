@@ -1,5 +1,6 @@
-"""Render a ReportTable as Excel (openpyxl) or PDF (WeasyPrint)."""
+"""Render a ReportTable as Excel (openpyxl), CSV or PDF (WeasyPrint)."""
 
+import csv
 import html
 import io
 from decimal import Decimal
@@ -9,9 +10,9 @@ from fastapi.responses import JSONResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from weasyprint import HTML
 
 from app.core.config import get_settings
+from app.core.money import money, qty
 from app.modules.reports.table import ReportTable, fmt_cell
 
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -19,7 +20,8 @@ NUMERIC = {"money": "#,##0.00", "qty": "#,##0.###", "int": "#,##0", "drcr": "#,#
 
 
 def _filename(table: ReportTable, ext: str) -> str:
-    safe = "".join(c if c.isalnum() else "_" for c in table.title).strip("_").lower()
+    base = table.meta.get("filename") or table.title
+    safe = "".join(c if c.isalnum() or c == "-" else "_" for c in base).strip("_").lower()
     return f"{safe}.{ext}"
 
 
@@ -68,6 +70,28 @@ def to_xlsx(table: ReportTable) -> bytes:
     return buf.getvalue()
 
 
+def to_csv(table: ReportTable) -> bytes:
+    """Plain numbers (no thousands separators) so the file re-imports cleanly; BOM so Excel reads it as UTF-8."""
+
+    def cell(value, col_type: str) -> str:
+        if value is None or value == "":
+            return ""
+        if col_type == "qty":
+            return str(qty(Decimal(str(value))))
+        if col_type in ("money", "drcr"):
+            return str(money(Decimal(str(value))))
+        return fmt_cell(value, col_type)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([c.label for c in table.columns])
+    for row in table.rows:
+        writer.writerow([cell(row.get(c.key), c.type) for c in table.columns])
+    if table.totals:
+        writer.writerow([cell(table.totals.get(c.key), c.type) for c in table.columns])
+    return buf.getvalue().encode("utf-8-sig")
+
+
 PDF_CSS = """
 @page { size: A4 %s; margin: 14mm 12mm; @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #666; } }
 body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 9pt; color: #111; }
@@ -105,6 +129,9 @@ def to_pdf(table: ReportTable) -> bytes:
         f"<div class='biz'>{esc(get_settings().business_name)}</div><h1>{esc(table.title)}</h1>{subtitle}"
         f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></body></html>"
     )
+    # Imported here so the API still starts where WeasyPrint's native libs are missing (e.g. Windows without GTK).
+    from weasyprint import HTML
+
     return HTML(string=doc).write_pdf()
 
 
@@ -113,6 +140,11 @@ def respond(table: ReportTable, fmt: str) -> Response:
         return Response(
             to_xlsx(table), media_type=XLSX_TYPE,
             headers={"Content-Disposition": f'attachment; filename="{_filename(table, "xlsx")}"'},
+        )  # fmt: skip
+    if fmt == "csv":
+        return Response(
+            to_csv(table), media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{_filename(table, "csv")}"'},
         )  # fmt: skip
     if fmt == "pdf":
         return Response(

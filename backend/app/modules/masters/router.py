@@ -149,6 +149,12 @@ def list_vehicles(request: Request, db: DB, params: ListQuery):
     return _list(db, request, Vehicle, s.VehicleOut, params, search=("name", "reg_no"), filters={})
 
 
+@router.get("/vehicles/{vehicle_id}/driver", response_model=s.DriverSuggestion, dependencies=[READ])
+def vehicle_driver(vehicle_id: int, db: DB, on: dt.date | None = None):
+    """Form auto-fill: today's substitute or the regular driver, skipping anyone marked absent."""
+    return service.suggest_driver(db, vehicle_id, on or dt.date.today())
+
+
 @router.post("/vehicles", response_model=s.VehicleOut, status_code=201, dependencies=[WRITE])
 def create_vehicle(data: s.VehicleIn, db: DB):
     vehicle = service.create_vehicle(db, data)

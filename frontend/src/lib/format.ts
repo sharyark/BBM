@@ -35,3 +35,15 @@ export function formatDrCr(v: Num): string {
 export function toDecimalString(n: number, places = 2): string {
   return (Math.round((n + Number.EPSILON) * 10 ** places) / 10 ** places).toFixed(places)
 }
+
+const whole = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 0 })
+
+/** Short amount for headlines and chart axes, in the shop's own words: "36.1 lakh", "1.2 crore", "75,000". */
+export function formatShort(v: Num): string {
+  const n = toNumber(v)
+  const a = Math.abs(n)
+  const trim = (x: number, dp: number) => x.toFixed(dp).replace(/\.?0+$/, '')
+  if (a >= 1e7) return `${trim(n / 1e7, a >= 1e8 ? 1 : 2)} crore`
+  if (a >= 1e5) return `${trim(n / 1e5, a >= 1e6 ? 1 : 2)} lakh`
+  return whole.format(n)
+}

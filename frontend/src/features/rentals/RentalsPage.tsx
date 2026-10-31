@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Col, Input, Row, Select, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useSave } from '@/api/hooks'
 import { useLookups } from '@/api/lookups'
@@ -18,10 +18,12 @@ import { usePermission } from '@/hooks/usePermission'
 import { formatDate, today } from '@/lib/date'
 import { formatQty, toNumber } from '@/lib/format'
 import { rentalSchema, type RentalForm } from '@/lib/schemas'
+import { useVehicleDriver } from '@/hooks/useVehicleDriver'
 
 function RentalFormView({ doc, onDone }: DocFormProps<Rental, undefined>) {
   const lookups = useLookups()
   const clientRef = useRef(crypto.randomUUID())
+  const [editReason, setEditReason] = useState('')
   const canAdd = usePermission('masters.write')
   const [adding, setAdding] = useState<string | null>(null)
   const { control, handleSubmit, setValue } = useForm<RentalForm>({
@@ -32,22 +34,26 @@ function RentalFormView({ doc, onDone }: DocFormProps<Rental, undefined>) {
     },
   })
   const [customerId, qty, rate, basis] = useWatch({ control, name: ['customer_id', 'qty', 'rate', 'basis'] })
+  const [date, vehicleId, operatorId] = useWatch({ control, name: ['date', 'vehicle_id', 'operator_id'] })
+  const setOperator = useCallback((id: number | null) => setValue('operator_id', id), [setValue])
+  const operator = useVehicleDriver({ vehicleId, date, driverId: operatorId, setDriver: setOperator, editing: Boolean(doc) })
   const sites = lookups.sites.filter((s) => s.party_id === customerId)
   const save = useSave<object>(doc ? 'put' : 'post', doc ? `/rentals/${doc.id}` : '/rentals', { successMessage: 'Rental saved', onSuccess: onDone })
   const machines = lookups.vehicles.filter((v) => v.type === 'loader' || v.type === 'dumper' || v.type === 'tractor_trolley')
 
   return (
     <DocFormShell
+      editReason={doc ? { value: editReason, onChange: setEditReason } : undefined}
       saving={save.isPending}
-      onSubmit={handleSubmit((v) => save.mutate({ ...v, site_id: v.site_id || null, operator_id: v.operator_id || null, notes: v.notes || null, ...(doc ? {} : { client_ref: clientRef.current }) }))}
+      onSubmit={handleSubmit((v) => save.mutate({ ...v, site_id: v.site_id || null, operator_id: v.operator_id || null, notes: v.notes || null, ...(doc ? { edit_reason: editReason.trim() } : { client_ref: clientRef.current }) }))}
       extra={<Typography.Text>Amount: <Typography.Text strong><Money value={toNumber(qty) * toNumber(rate)} /></Typography.Text></Typography.Text>}
     >
       <Row gutter={12}>
         <Col xs={24} sm={8}><Field control={control} name="date" label="Date" required>{(f) => <DateField id={f.id} value={f.value} onChange={f.onChange} />}</Field></Col>
         <Col xs={24} sm={16}><Field control={control} name="customer_id" label="Customer" required>{(f) => <EntitySelect id={f.id} options={optionsOf(lookups.customers)} value={f.value} onChange={f.onChange} allowClear={false} autoFocus addLabel="New customer" onAdd={canAdd ? (n) => setAdding(n) : undefined} />}</Field></Col>
         <Col xs={24} sm={12}><Field control={control} name="site_id" label="Site">{(f) => <EntitySelect id={f.id} options={optionsOf(sites)} value={f.value} onChange={f.onChange} disabled={!customerId} />}</Field></Col>
-        <Col xs={24} sm={12}><Field control={control} name="vehicle_id" label="Machine" required>{(f) => <EntitySelect id={f.id} options={optionsOf(machines)} value={f.value} onChange={f.onChange} allowClear={false} />}</Field></Col>
-        <Col xs={24} sm={12}><Field control={control} name="operator_id" label="Operator">{(f) => <EntitySelect id={f.id} options={optionsOf(lookups.drivers)} value={f.value} onChange={f.onChange} />}</Field></Col>
+        <Col xs={24} sm={12}><Field control={control} name="vehicle_id" label="Machine" required>{(f) => <EntitySelect id={f.id} options={optionsOf(machines)} value={f.value} onChange={(v) => { operator.release(); f.onChange(v) }} allowClear={false} />}</Field></Col>
+        <Col xs={24} sm={12}><Field control={control} name="operator_id" label="Operator" extra={operator.hint}>{(f) => <EntitySelect id={f.id} options={operator.options} value={f.value} onChange={(v) => { operator.onPick(); f.onChange(v) }} />}</Field></Col>
         <Col xs={24} sm={12}><Field control={control} name="basis" label="Charged per" required>{(f) => <Select {...f} options={[{ value: 'hour', label: 'Hour' }, { value: 'trip', label: 'Trip' }, { value: 'day', label: 'Day' }]} />}</Field></Col>
         <Col xs={12}><Field control={control} name="qty" label={`Quantity (${basis}s)`} required>{(f) => <QtyInput {...f} />}</Field></Col>
         <Col xs={12}><Field control={control} name="rate" label={`Rate per ${basis}`} required>{(f) => <MoneyInput {...f} />}</Field></Col>

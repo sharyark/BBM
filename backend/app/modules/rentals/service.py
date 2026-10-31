@@ -8,7 +8,7 @@ from app.accounting.sequences import next_doc_no
 from app.core.errors import Conflict, NotFound
 from app.core.money import money
 from app.core.pagination import ListParams, apply_sort, paginate
-from app.modules.common import ensure_active, find_by_client_ref, get_or_404, mark_void
+from app.modules.common import ensure_active, find_by_client_ref, get_or_404, mark_edited, mark_void
 from app.modules.masters.models import Party, Site, Staff, Vehicle
 from app.modules.rentals.models import Rental
 from app.modules.rentals.schemas import RentalIn
@@ -76,6 +76,8 @@ def create(db: Session, data: RentalIn) -> tuple[Rental, bool]:
 def update(db: Session, rental_id: int, data: RentalIn) -> Rental:
     r = get_or_404(db, Rental, rental_id, "Rental")
     ensure_active(r)
+    # Before any other check, so a missing reason is the first thing the munshi is told.
+    mark_edited(db, r, data.edit_reason)
     _ensure_not_invoiced(r)
     customer = _validate(db, data)
     ensure_period_open(db, r.date, data.date)

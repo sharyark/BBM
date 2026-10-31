@@ -1,9 +1,9 @@
-"""Columns shared by every financial document (idempotency + void bookkeeping)."""
+"""Columns shared by every financial document (idempotency, void and edit bookkeeping)."""
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, Uuid
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import BigIntFK
@@ -17,6 +17,11 @@ class TxnMixin:
     void_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     voided_by: Mapped[int | None] = mapped_column(BigIntFK, ForeignKey("users.id"), nullable=True)
+    # Last edit, shown as an "Edited" tag with its reason; the full history is in audit_logs.
+    edit_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    edit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    edited_by: Mapped[int | None] = mapped_column(BigIntFK, ForeignKey("users.id"), nullable=True)
     # Idempotency: a double-click with the same client_ref can't create two documents.
     client_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid, unique=True, nullable=True)
 

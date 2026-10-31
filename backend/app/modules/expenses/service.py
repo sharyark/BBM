@@ -7,7 +7,7 @@ from app.accounting.posting import ensure_period_open, post, reverse
 from app.accounting.sequences import next_doc_no
 from app.core.errors import NotFound
 from app.core.pagination import ListParams, apply_sort, paginate
-from app.modules.common import ensure_active, find_by_client_ref, get_or_404, mark_void
+from app.modules.common import ensure_active, find_by_client_ref, get_or_404, mark_edited, mark_void
 from app.modules.expenses.models import Expense
 from app.modules.expenses.schemas import ExpenseIn
 from app.modules.masters.models import MoneyAccount, Party, Vehicle
@@ -65,6 +65,8 @@ def create(db: Session, data: ExpenseIn) -> tuple[Expense, bool]:
 def update(db: Session, expense_id: int, data: ExpenseIn) -> Expense:
     e = get_or_404(db, Expense, expense_id, "Expense")
     ensure_active(e)
+    # Before any other check, so a missing reason is the first thing the munshi is told.
+    mark_edited(db, e, data.edit_reason)
     ensure_period_open(db, e.date, data.date)
     reverse(db, e.journal_id, reason=f"{e.voucher_no} changed")
     _apply(db, e, data)

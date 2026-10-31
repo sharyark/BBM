@@ -9,6 +9,7 @@ import { DateField } from '@/components/DateField'
 import { MoneyInput, QtyInput } from '@/components/DecimalInput'
 import { PageHeader } from '@/components/PageHeader'
 import { today } from '@/lib/date'
+import { STICKY_HEADER } from '@/components/tableDefaults'
 
 type Kind = OpeningBalance['kind']
 type Entry = { side: 'dr' | 'cr'; amount: string }
@@ -23,7 +24,7 @@ const SIDE_LABELS: Record<Kind, [string, string]> = {
 function BalanceTable({ kind, rows, entries, onChange }: { kind: Kind; rows: { id: number; name: string; note?: string }[]; entries: Record<string, Entry>; onChange: (key: string, e: Entry) => void }) {
   const [drLabel, crLabel] = SIDE_LABELS[kind]
   return (
-    <Table size="small" rowKey="id" pagination={false} dataSource={rows} scroll={{ x: 'max-content' }}
+    <Table sticky={STICKY_HEADER} size="small" rowKey="id" pagination={false} dataSource={rows} scroll={{ x: 'max-content' }}
       columns={[
         { title: 'Name', dataIndex: 'name' },
         { title: 'Note', dataIndex: 'note' },

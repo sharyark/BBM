@@ -14,6 +14,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { usePermission } from '@/hooks/usePermission'
 import { formatDate, today } from '@/lib/date'
 import { CrudTable, type FieldSpec } from './CrudTable'
+import { STICKY_HEADER } from '@/components/tableDefaults'
 
 const partyType = (t: Party['type']) => <Tag color={t === 'customer' ? 'blue' : t === 'supplier' ? 'orange' : 'purple'}>{t}</Tag>
 const khata = (row: { id: number }) => (
@@ -197,7 +198,7 @@ function RateCards() {
           </>
         )}
       </Space>
-      <Table size="small" rowKey="id" loading={isLoading} columns={columns} dataSource={data} pagination={{ pageSize: 50, hideOnSinglePage: true }} scroll={{ x: 'max-content' }} />
+      <Table sticky={STICKY_HEADER} size="small" rowKey="id" loading={isLoading} columns={columns} dataSource={data} pagination={{ pageSize: 50, hideOnSinglePage: true }} scroll={{ x: 'max-content' }} />
     </>
   )
 }
