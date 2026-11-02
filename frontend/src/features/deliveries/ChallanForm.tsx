@@ -566,7 +566,7 @@ export default function ChallanForm({ delivery, onSaved, onPrint }: Props) {
           {customerId && khata && total > 0 && (
             <Col xs={24} lg={pay === 'credit' ? 16 : pay === 'part' ? 6 : 11}>
               <Typography.Text type="secondary" className="challan-extra-hint">
-                {after > 0 ? <>Udhaar after this: <Money value={after} /></> : after < 0 ? <>Advance left after this: <Money value={-after} /></> : 'Khata will be clear'}
+                {after > 0 ? <>Baqaya after this: <Money value={after} /></> : after < 0 ? <>Advance left after this: <Money value={-after} /></> : 'Khata will be clear'}
               </Typography.Text>
             </Col>
           )}

@@ -143,7 +143,7 @@ export default function DashboardPage() {
       <Section title="Needs attention" hint="Things to follow up on, most urgent first">
         <Card size="small" style={cardStyle} styles={{ body: { padding: todos.length ? 6 : 16 } }}>
           {todos.length === 0 ? (
-            <div className="todo-clear"><CheckCircleFilled style={{ color: GOOD }} /> All clear. No old udhaar, no finished stock, no wages due.</div>
+            <div className="todo-clear"><CheckCircleFilled style={{ color: GOOD }} /> All clear. No old baqaya, no finished stock, no wages due.</div>
           ) : (
             todos.map((t) => (
               <div key={t.key} className="todo-row">
@@ -171,7 +171,7 @@ export default function DashboardPage() {
             </Card>
           </Col>
           <Col xs={24} lg={8}>
-            <Card size="small" style={cardStyle} title="Customers owe you (udhaar)">
+            <Card size="small" style={cardStyle} title="Customers owe you (baqaya)">
               <div className="dash-big">{rs(d.total_receivable)}</div>
               <Typography.Text type="secondary" className="dash-sub">Biggest balances</Typography.Text>
               <BarList empty="Nobody owes you anything" rows={d.top_debtors.map((r) => ({

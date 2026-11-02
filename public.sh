@@ -18,6 +18,10 @@ if [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 18 ]; then
     echo "Node 18 or newer is needed (try: nvm use 18)"; exit 1
   fi
 fi
+# The PWA build (workbox) needs the global `crypto` that Node exposes by default only from v19.
+if [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 19 ]; then
+  export NODE_OPTIONS="${NODE_OPTIONS:-} --experimental-global-webcrypto"
+fi
 
 cd "$ROOT/backend"
 [ -f .env ] || { echo "backend/.env is missing"; exit 1; }
@@ -37,7 +41,7 @@ alembic upgrade head
 echo "==> Building web app"
 cd "$ROOT/frontend"
 [ -d node_modules ] || npm ci
-npm run build >/dev/null
+npm run build >/dev/null || { echo "Web app build failed; run: cd frontend && npm run build"; exit 1; }
 
 cleanup() { echo; echo "==> Stopping"; kill 0 2>/dev/null || true; }
 trap cleanup INT TERM EXIT
