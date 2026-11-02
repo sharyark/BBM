@@ -17,5 +17,5 @@ export default defineConfig({
       output: { manualChunks: { antd: ['antd', '@ant-design/icons'], react: ['react', 'react-dom', 'react-router-dom'] } },
     },
   },
-  test: { environment: 'jsdom', setupFiles: ['./src/test/setup.ts'], globals: true, css: false },
+  test: { include: ['src/**/*.test.{ts,tsx}'], environment: 'jsdom', setupFiles: ['./src/test/setup.ts'], globals: true, css: false },
 })
