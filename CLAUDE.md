@@ -22,6 +22,8 @@ alembic upgrade head                        # schema (CI also checks migrations 
 python -m app.seed [--reset]                # 45 days of demo data; `python -m app.bootstrap` = only first admin
 uvicorn app.main:app --reload               # :8000, docs at /api/docs
 ```
+One command for the whole local stack (Postgres in Docker, venv, migrations, API :8000, web :5173): `./dev.sh` (also `dev.ps1`/`dev.bat`).
+
 Local DB: `docker compose -f docker-compose.dev.yml up -d`, or set `DATABASE_URL=sqlite:///./dev.db` + `AUTO_CREATE_TABLES=true` in `backend/.env`. For local HTTP set `COOKIE_SECURE=false`.
 
 Frontend (`cd frontend`):
@@ -56,9 +58,9 @@ E2E gotcha: login is rate-limited to 5/min/IP (DB-backed), so a full run can tri
 
 **Reports.** Each report builds a generic `ReportTable` that is rendered as JSON, Excel (openpyxl) or PDF (WeasyPrint); document PDFs (challan, invoice, voucher) are in `modules/reports`. Adding a report = one query function + registering it; the frontend `ReportPage` renders any table.
 
-**Frontend.** `src/app/` holds router (lazy routes, `RequireAuth`), `AuthContext` (`useAuth().can(perm)`, `usePermission`) and layout. `src/features/<area>/` per screen; shared building blocks in `src/components/` (`Field` with id-linked labels, `EntitySelect` with inline quick-add via `QuickAdd.tsx`, `CrudTable`, `DocPage`, `ReportPage`, `StatCard`/`HeroBanner`). Data via TanStack Query; after any save, invalidate all queries (balances are cross-cutting). Forms are RHF + Zod. UI hides actions by permission, but the server is the real gate. Currency/locale come from `VITE_CURRENCY`/`VITE_LOCALE`; i18n scaffolding is English-only.
+**Frontend.** `src/app/` holds router (lazy routes, `RequireAuth`), `AuthContext` (`useAuth().can(perm)`, `usePermission`) and layout. `src/features/<area>/` per screen; shared building blocks in `src/components/` (`Field` with id-linked labels, `EntitySelect` with inline quick-add via `QuickAdd.tsx`, `DocPage`, `DocFormShell`, `ReportView`, `VoidButton`, `StatCard`/`HeroBanner`). `CrudTable` (masters) and `ReportPage` (renders any report table via `ReportView`) live under `features/`. Data via TanStack Query; after any save, invalidate all queries (balances are cross-cutting). Forms are RHF + Zod. UI hides actions by permission, but the server is the real gate. Currency/locale come from `VITE_CURRENCY`/`VITE_LOCALE`; i18n scaffolding is English-only.
 
-**Deploy.** `docker-compose.yml` = caddy + api + db + backup; the api container runs `alembic upgrade head` and `app.bootstrap` on start; the app uses a restricted Postgres role. CI (`.github/workflows/ci.yml`) lints, tests on Postgres, builds images, deploys over SSH.
+**Deploy.** `docker-compose.yml` = caddy + api + db + backup; the api container runs `alembic upgrade head` and `app.bootstrap` on start; the app uses a restricted Postgres role. CI (`.github/workflows/ci.yml`) lints, tests on Postgres, builds images, deploys over SSH. A staging stack on the same VPS overlays `docker-compose.staging.yml` (own DB/volumes, plain HTTP on :8080; command in that file's header). `INSTALL.md` is the non-technical install guide in Roman Urdu. Client-testing deploy: frontend on Cloudflare Pages (root `frontend`, `frontend/functions/api/[[path]].ts` proxies `/api/*` to `BACKEND_URL` so the SameSite=Strict cookie works and forwards `CF-Connecting-IP` for the login rate limit), backend on Render free (`render.yaml`, Frankfurt), DB on Supabase via the session pooler (port 5432) as the restricted role `hisaab_app`.
 
 ## What belongs where
 
@@ -103,7 +105,7 @@ The owner asked for an attractive, moderate look: themed visuals, not "so much p
 
 ## Text and data constraints
 
-- **Money**: `NUMERIC(14,2)` in the DB, `Decimal` in Python, decimal *strings* in JSON, never `float`/JS number for storage or posting. On screen use `formatMoney` / `formatCurrency` / `formatDrCr` from `lib/format.ts` (lakh grouping via `VITE_LOCALE`, currency from `VITE_CURRENCY`; backend default `Rs`). Debit-positive signed balances display as `Dr`/`Cr`.
+- **Money**: `NUMERIC(14,2)` in the DB, `Decimal` in Python, decimal *strings* in JSON, never `float`/JS number for storage or posting. On screen use `formatMoney` / `formatCurrency` / `formatBalance` from `lib/format.ts` (lakh grouping via `VITE_LOCALE`, currency from `VITE_CURRENCY`; backend default `Rs`). Debit-positive signed balances never show Dr/Cr: they display with khata words via `formatBalance(v, SIDES.x)` / `<Money sides>` (frontend) and `Col(..., "drcr", sides)` (backend reports): customer `Baqaya`/`Advance`, supplier and staff `Advance`/`Baqaya`; khata columns are Bill/Wasool (customer), Bill/Adaigi (supplier), Mazdoori/Adaigi (staff).
 - **Quantities**: up to 3 decimals (`formatQty`); one unit per material.
 - **UI wording**: English only today; plain shop-floor words (challan, khata, munshi, bhara/freight), no accounting jargon (debit/credit/journal) in the accountant's screens. Put new user-facing strings through `i18n/en.ts` keys where the surrounding code does; many existing labels are still literal. API error `message`s are shown to users, so write them as full sentences a munshi can act on (e.g. `"This document is void and cannot be changed"`), and give every error a stable machine `code`.
 - **Voiding** requires a typed reason; there are no delete buttons or `DELETE` endpoints on financial documents.

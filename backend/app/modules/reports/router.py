@@ -32,7 +32,7 @@ def dashboard(db: DB, user: CurrentUser):
 
 @router.get("/khata/{party_id}", dependencies=[perm("report.khata")])
 def khata(party_id: int, db: DB, date_from: DateFrom = None, date_to: DateTo = None, fmt: Format = "json"):
-    """Customer or supplier statement: date-wise Dr/Cr with running balance."""
+    """Customer or supplier statement: date-wise bill, wasool/adaigi and running baqaya."""
     start, end = q.default_range(date_from, date_to)
     if date_from is None:
         start = dt.date(2000, 1, 1)  # a khata defaults to the whole history
@@ -48,16 +48,23 @@ def khata_share(party_id: int, db: DB, date_from: DateFrom = None, date_to: Date
         start = dt.date(2000, 1, 1)
     table = q.party_khata(db, party_id, start, end)
     closing = table.meta["closing"]
-    side = "receivable from you" if closing > 0 else "payable to you" if closing < 0 else "settled"
+    labels = {c.key: c.label for c in table.columns}
     last = [r for r in table.rows if r["type"] != "Opening"][-5:]
     lines = [
-        f"{fmt_date(r['date'])} {r['type']}: {fmt_money(r['debit'] or r['credit'])} {'Dr' if r['debit'] else 'Cr'}"
+        f"{fmt_date(r['date'])} {r['type']}: {fmt_money(r['debit'] or r['credit'])} ({labels['debit' if r['debit'] else 'credit']})"
         for r in last
     ]
+    # Written to the party, so "aap" is them. A positive balance means they owe us.
+    theirs, ours = "Baqaya (aap ki taraf)", "Baqaya (hamari taraf)"
+    if party.type == "customer":
+        ours = "Advance (aap ka hamare paas jama)"
+    elif party.type == "supplier":
+        theirs = "Advance (aap ko pehle diya hua)"
+    status = theirs if closing > 0 else ours if closing < 0 else None
     message = (
-        f"Assalam o Alaikum {party.name},\nYour account statement as of {end:%d-%m-%Y}:\n"
+        f"Assalam o Alaikum {party.name},\n{end:%d-%m-%Y} tak aap ka hisaab:\n"
         + ("\n".join(lines) + "\n" if lines else "")
-        + f"Balance: {fmt_money(abs(closing))} ({side})."
+        + (f"{status}: {fmt_money(abs(closing))}" if status else "Hisaab barabar hai.")
     )
     digits = re.sub(r"\D", "", party.phone or "")
     url = f"https://wa.me/{digits}?text={quote(message)}" if digits else f"https://wa.me/?text={quote(message)}"

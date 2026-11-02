@@ -1,4 +1,4 @@
-import { formatCurrency, formatDrCr, formatMoney, formatQty, formatShort, toDecimalString, toNumber } from './format'
+import { formatBalance, formatCurrency, formatMoney, formatQty, formatShort, SIDES, toDecimalString, toNumber } from './format'
 
 describe('format', () => {
   it('groups money with two decimals (lakh style for en-IN)', () => {
@@ -9,10 +9,12 @@ describe('format', () => {
   it('prefixes the currency', () => {
     expect(formatCurrency('1500')).toBe('Rs 1,500.00')
   })
-  it('shows signed balances as Dr / Cr', () => {
-    expect(formatDrCr('1200')).toBe('1,200.00 Dr')
-    expect(formatDrCr('-300.5')).toBe('300.50 Cr')
-    expect(formatDrCr(0)).toBe('0.00')
+  it('shows signed balances with khata words instead of Dr / Cr', () => {
+    expect(formatBalance('1200', SIDES.customer)).toBe('1,200.00 Baqaya')
+    expect(formatBalance('-300.5', SIDES.customer)).toBe('300.50 Advance')
+    expect(formatBalance('-300.5', SIDES.supplier)).toBe('300.50 Baqaya')
+    expect(formatBalance('500', SIDES.money)).toBe('500.00')
+    expect(formatBalance(0, SIDES.staff)).toBe('0.00')
   })
   it('trims quantity decimals', () => {
     expect(formatQty('2.500')).toBe('2.5')

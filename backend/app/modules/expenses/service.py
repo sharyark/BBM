@@ -25,7 +25,7 @@ def _apply(db: Session, e: Expense, data: ExpenseIn) -> None:
         party = db.get(Party, data.party_id)
         if party is None or party.type == "customer":
             raise NotFound("Supplier (pump/workshop) not found")
-        paid_from, paid_label = party.account_id, f"credit: {party.name}"
+        paid_from, paid_label = party.account_id, f"udhaar: {party.name}"
     e.date = data.date
     e.category = data.category
     e.vehicle_id = data.vehicle_id

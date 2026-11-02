@@ -24,12 +24,25 @@ export function formatQty(v: Num): string {
   return plain.format(toNumber(v))
 }
 
-/** Signed debit-positive balance -> "1,200.00 Dr" / "300.00 Cr". */
-export function formatDrCr(v: Num): string {
+/** Words shown after a signed (debit-positive) balance: [when positive, when negative]. Same words as the backend reports. */
+export type Sides = readonly [string, string]
+export const SIDES = {
+  customer: ['Baqaya', 'Advance'],
+  supplier: ['Advance', 'Baqaya'],
+  staff: ['Advance', 'Baqaya'],
+  both: ['Lena', 'Dena'],
+  money: ['', 'Overdraft'],
+} as const satisfies Record<string, Sides>
+
+/** Signed debit-positive balance -> "1,200.00 Baqaya" / "300.00 Advance" (words depend on whose khata it is). */
+export function formatBalance(v: Num, sides: Sides = SIDES.both): string {
   const n = toNumber(v)
   if (n === 0) return formatMoney(0)
-  return `${formatMoney(Math.abs(n))} ${n > 0 ? 'Dr' : 'Cr'}`
+  return `${formatMoney(Math.abs(n))} ${n > 0 ? sides[0] : sides[1]}`.trim()
 }
+
+/** The balance words for a party row: a "both" party can owe either way. */
+export const partySides = (type: string | undefined, fallback: Sides): Sides => (type === 'both' ? SIDES.both : fallback)
 
 /** Rounds a JS number to 2dp without float noise, as a string for the API. */
 export function toDecimalString(n: number, places = 2): string {

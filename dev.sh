@@ -11,12 +11,21 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 ROOT=$PWD
 
-echo "==> Starting database"
-docker compose -f docker-compose.dev.yml up -d
-until docker compose -f docker-compose.dev.yml exec -T db pg_isready -U hisaab >/dev/null 2>&1; do sleep 1; done
-
 cd "$ROOT/backend"
 [ -f .env ] || { cp .env.example .env; echo "==> Created backend/.env from .env.example"; }
+
+# Only start the Docker DB (and load demo data) when backend/.env points at a local database.
+# A remote DATABASE_URL (e.g. Supabase) is used as-is and never seeded.
+DB_URL=$(grep -E '^DATABASE_URL=' .env | tail -1 | cut -d= -f2- || true)
+if [ -z "$DB_URL" ] || echo "$DB_URL" | grep -qE '@(localhost|127\.0\.0\.1)(:|/)'; then
+  LOCAL_DB=1
+  echo "==> Starting local database (Docker)"
+  (cd "$ROOT" && docker compose -f docker-compose.dev.yml up -d)
+  until (cd "$ROOT" && docker compose -f docker-compose.dev.yml exec -T db pg_isready -U hisaab) >/dev/null 2>&1; do sleep 1; done
+else
+  LOCAL_DB=0
+  echo "==> Using remote database from backend/.env (no Docker, no demo data)"
+fi
 if [ ! -x .venv/bin/python ]; then
   echo "==> Creating Python environment (first run)"
   python3 -m venv .venv
@@ -28,8 +37,10 @@ source .venv/bin/activate
 echo "==> Migrating database"
 alembic upgrade head
 
-echo "==> Loading demo data (skipped if the database already has data)"
-python -m app.seed || true
+if [ "$LOCAL_DB" = 1 ]; then
+  echo "==> Loading demo data (skipped if the database already has data)"
+  python -m app.seed || true
+fi
 
 cleanup() { echo; echo "==> Stopping API and web app"; kill 0 2>/dev/null || true; }
 trap cleanup INT TERM EXIT

@@ -180,8 +180,8 @@ def _challan_thermal(db: Session, d: Delivery, paper: str, customer, material, e
     total = d.sale_amount + d.freight_amount + d.extra_amount
     paid = db.get(Payment, d.receipt_id) if d.receipt_id else None
     paid_rows = (
-        f"<tr><td>Paid now</td><td class='r'>{fmt_money(paid.amount)}</td></tr>"
-        f"<tr><td>Balance (udhaar)</td><td class='r'>{fmt_money(total - paid.amount)}</td></tr>"
+        f"<tr><td>Wasool (abhi)</td><td class='r'>{fmt_money(paid.amount)}</td></tr>"
+        f"<tr><td>Baqaya</td><td class='r'>{fmt_money(total - paid.amount)}</td></tr>"
         if paid and paid.status == "active"
         else ""
     )

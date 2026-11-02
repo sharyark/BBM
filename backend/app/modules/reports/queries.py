@@ -20,7 +20,15 @@ from app.modules.masters.models import Material, MoneyAccount, Party, Site, Staf
 from app.modules.payments.models import Payment
 from app.modules.purchases.models import Purchase, PurchaseLine
 from app.modules.rentals.models import Rental
-from app.modules.reports.table import Col, ReportTable
+from app.modules.reports.table import (
+    CUSTOMER_SIDES,
+    DEFAULT_SIDES,
+    STAFF_SIDES,
+    SUPPLIER_SIDES,
+    Col,
+    ReportTable,
+    Sides,
+)
 from app.modules.stock.models import StockItem, StockMove
 
 SOURCE_LABEL = {
@@ -54,10 +62,27 @@ def _range_label(date_from: dt.date, date_to: dt.date) -> str:
 # ---------------------------------------------------------------------------------------------------
 # Khata / ledger statements
 # ---------------------------------------------------------------------------------------------------
+# Plain words for the two amount columns, per khata. Debit/credit stay the internal keys.
+# Order = column order: the charge (what raises the balance owed) first, then the money that settles it.
+LEDGER_WORDS: dict[str, tuple[tuple[str, str], tuple[str, str], Sides]] = {
+    "customer": (("debit", "Bill"), ("credit", "Wasool"), CUSTOMER_SIDES),
+    "supplier": (("credit", "Bill"), ("debit", "Adaigi"), SUPPLIER_SIDES),
+    "staff": (("credit", "Mazdoori"), ("debit", "Adaigi"), STAFF_SIDES),
+    # Customer and supplier at once: what we gave them (goods or money) vs what we got from them.
+    "both": (("debit", "Diya"), ("credit", "Liya"), DEFAULT_SIDES),
+}
+
+
 def ledger(
-    db: Session, account_id: int, title: str, date_from: dt.date, date_to: dt.date, subtitle: str | None = None
+    db: Session,
+    account_id: int,
+    title: str,
+    date_from: dt.date,
+    date_to: dt.date,
+    subtitle: str | None = None,
+    kind: str = "customer",
 ) -> ReportTable:
-    """Date-wise Dr/Cr with a running balance computed by a window function (debit-positive)."""
+    """Date-wise entries with a running balance computed by a window function (debit-positive)."""
     running = (
         func.sum(JournalLine.debit - JournalLine.credit)
         .over(order_by=[JournalEntry.date, JournalEntry.id, JournalLine.id])
@@ -100,6 +125,7 @@ def ledger(
             }
         )
     closing = opening + total_dr - total_cr
+    first, second, sides = LEDGER_WORDS.get(kind, LEDGER_WORDS["both"])
     return ReportTable(
         title=title,
         subtitle=subtitle or _range_label(date_from, date_to),
@@ -107,9 +133,9 @@ def ledger(
             Col("date", "Date", "date"),
             Col("type", "Type"),
             Col("narration", "Details"),
-            Col("debit", "Debit", "money"),
-            Col("credit", "Credit", "money"),
-            Col("balance", "Balance", "drcr"),
+            Col(first[0], first[1], "money"),
+            Col(second[0], second[1], "money"),
+            Col("balance", "Baqaya / Advance", "drcr", sides),
         ],
         rows=rows,
         totals={"narration": "Total / Closing", "debit": total_dr, "credit": total_cr, "balance": closing},
@@ -122,7 +148,7 @@ def party_khata(db: Session, party_id: int, date_from: dt.date, date_to: dt.date
     if party is None:
         raise NotFound("Party not found")
     kind = "Supplier" if party.type == "supplier" else "Customer"
-    table = ledger(db, party.account_id, f"{kind} khata - {party.name}", date_from, date_to)
+    table = ledger(db, party.account_id, f"{kind} khata - {party.name}", date_from, date_to, kind=party.type)
     table.meta.update(party_id=party.id, party_name=party.name, phone=party.phone)
     return table
 
@@ -132,7 +158,7 @@ def staff_khata(db: Session, staff_id: int, date_from: dt.date, date_to: dt.date
     staff = db.get(Staff, staff_id)
     if staff is None:
         raise NotFound("Staff member not found")
-    table = ledger(db, staff.account_id, f"Labour khata - {staff.name}", date_from, date_to)
+    table = ledger(db, staff.account_id, f"Labour khata - {staff.name}", date_from, date_to, kind="staff")
     counts = {"present": 0, "half": 0, "absent": 0}
     for status, n in db.execute(
         select(Attendance.status, func.count())
@@ -310,7 +336,7 @@ def day_book(db: Session, day: dt.date) -> ReportTable:
                 "no": e.id,
                 "type": ("Reversal: " if e.reverses_id else "") + SOURCE_LABEL.get(e.source_type, e.source_type),
                 "narration": e.narration,
-                "accounts": f"Dr {dr_names} / Cr {cr_names}",
+                "accounts": f"{dr_names} ← {cr_names}",
                 "amount": sum((ln.debit for ln in e.lines), ZERO),
             }
         )
@@ -321,7 +347,7 @@ def day_book(db: Session, day: dt.date) -> ReportTable:
             Col("no", "No.", "int"),
             Col("type", "Type"),
             Col("narration", "Details"),
-            Col("accounts", "Accounts"),
+            Col("accounts", "Kis mein ← kahan se"),
             Col("amount", "Amount", "money"),
         ],
         rows=rows,

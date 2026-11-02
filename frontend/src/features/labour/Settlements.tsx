@@ -15,7 +15,7 @@ import { StatusTag } from '@/components/StatusTag'
 import { VoidButton } from '@/components/VoidButton'
 import { usePermission } from '@/hooks/usePermission'
 import { API_DATE, formatDate, today } from '@/lib/date'
-import { formatQty } from '@/lib/format'
+import { formatQty, SIDES } from '@/lib/format'
 import { STICKY_HEADER } from '@/components/tableDefaults'
 
 export default function Settlements() {
@@ -79,7 +79,7 @@ export default function Settlements() {
               <Descriptions.Item label="Trips">{preview.trips}</Descriptions.Item>
               <Descriptions.Item label="Gross wages"><Money value={preview.gross} bold /></Descriptions.Item>
               <Descriptions.Item label="Advances in period"><Money value={preview.advances_in_period} /></Descriptions.Item>
-              <Descriptions.Item label="Current balance"><Money value={preview.current_balance} drcr /></Descriptions.Item>
+              <Descriptions.Item label="Current balance"><Money value={preview.current_balance} sides={SIDES.staff} /></Descriptions.Item>
             </Descriptions>
             {!preview.accrues_on_settlement && <p style={{ margin: '8px 0 0', color: '#8c8c8c' }}>Daily-wage workers already earned these wages day by day when attendance was saved. Settling records the period and any deduction.</p>}
             {canSettle && (

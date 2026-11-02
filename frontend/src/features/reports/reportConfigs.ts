@@ -24,7 +24,7 @@ export interface ReportValues {
 }
 
 export const REPORTS: ReportConfig[] = [
-  { key: 'khata', title: 'Party khata (customer / supplier)', description: 'Date-wise Dr/Cr with running balance. PDF and WhatsApp share.', perm: 'report.khata', endpoint: (v) => `/reports/khata/${v.party}`, needs: ['party'], filters: ['customerOrSupplier', 'range'], defaultDays: 90 },
+  { key: 'khata', title: 'Party khata (customer / supplier)', description: 'Date-wise bill, wasool and running baqaya / advance. PDF and WhatsApp share.', perm: 'report.khata', endpoint: (v) => `/reports/khata/${v.party}`, needs: ['party'], filters: ['customerOrSupplier', 'range'], defaultDays: 90 },
   { key: 'outstanding', title: 'Outstanding & aging', description: 'Who owes how much, for how long (0-30, 31-60, 60+ days).', perm: 'report.outstanding', endpoint: () => '/reports/outstanding', filters: ['asOf', 'outstandingKind'] },
   { key: 'cash-book', title: 'Cash book / bank book', description: 'Daily money in and out with closing balance.', perm: 'report.cashbook', endpoint: () => '/reports/cash-book', filters: ['moneyAccount', 'range'] },
   { key: 'day-book', title: 'Day book', description: 'Every entry of a single date.', perm: 'report.daybook', endpoint: () => '/reports/day-book', filters: ['date'] },

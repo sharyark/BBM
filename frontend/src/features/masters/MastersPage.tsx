@@ -8,7 +8,7 @@ import type { Material, MoneyAccount, Party, RateCard, Site, Staff, Vehicle } fr
 import { MoneyInput } from '@/components/DecimalInput'
 import { DateField } from '@/components/DateField'
 import { EntitySelect, optionsOf } from '@/components/EntitySelect'
-import { formatQty } from '@/lib/format'
+import { formatQty, partySides, SIDES } from '@/lib/format'
 import { Money } from '@/components/Money'
 import { PageHeader } from '@/components/PageHeader'
 import { usePermission } from '@/hooks/usePermission'
@@ -36,7 +36,7 @@ function Customers() {
     { title: 'Name', dataIndex: 'name' },
     { title: 'Type', dataIndex: 'type', render: partyType },
     { title: 'Phone', dataIndex: 'phone' },
-    { title: 'Balance (Dr = owes us)', dataIndex: 'balance', align: 'right', render: (v) => <Money value={v} drcr /> },
+    { title: 'Baqaya / Advance', dataIndex: 'balance', align: 'right', render: (v, r) => <Money value={v} sides={partySides(r.type, SIDES.customer)} /> },
   ]
   return (
     <CrudTable<Party & Record<string, unknown>>
@@ -56,7 +56,7 @@ function Suppliers() {
     { title: 'Name', dataIndex: 'name' },
     { title: 'Type', dataIndex: 'type', render: partyType },
     { title: 'Phone', dataIndex: 'phone' },
-    { title: 'Balance (Cr = we owe)', dataIndex: 'balance', align: 'right', render: (v) => <Money value={v} drcr /> },
+    { title: 'Baqaya / Advance', dataIndex: 'balance', align: 'right', render: (v, r) => <Money value={v} sides={partySides(r.type, SIDES.supplier)} /> },
   ]
   return (
     <CrudTable<Party & Record<string, unknown>>
@@ -120,7 +120,7 @@ function StaffTab() {
     { title: 'Role', dataIndex: 'role' },
     { title: 'Pay type', dataIndex: 'wage_type', render: (v: string) => v.replace('_', ' ') },
     { title: 'Wage', dataIndex: 'wage_amount', align: 'right', render: (v) => <Money value={v} /> },
-    { title: 'Balance (Cr = we owe)', dataIndex: 'balance', align: 'right', render: (v) => <Money value={v} drcr /> },
+    { title: 'Baqaya / Advance', dataIndex: 'balance', align: 'right', render: (v) => <Money value={v} sides={SIDES.staff} /> },
   ]
   const fields: FieldSpec[] = [
     { name: 'name', label: 'Name', kind: 'text', required: true },
@@ -137,7 +137,7 @@ function MoneyAccounts() {
   const columns: ColumnsType<MoneyAccount> = [
     { title: 'Account', dataIndex: 'name' },
     { title: 'Kind', dataIndex: 'kind' },
-    { title: 'Balance', dataIndex: 'balance', align: 'right', render: (v) => <Money value={v} drcr /> },
+    { title: 'Balance', dataIndex: 'balance', align: 'right', render: (v) => <Money value={v} sides={SIDES.money} /> },
   ]
   const fields: FieldSpec[] = [
     { name: 'name', label: 'Name (e.g. Bank - HBL, JazzCash)', kind: 'text', required: true },

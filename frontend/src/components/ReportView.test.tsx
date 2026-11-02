@@ -6,8 +6,8 @@ const data: ReportData = {
   title: 'Khata', subtitle: null, meta: {},
   columns: [
     { key: 'date', label: 'Date', type: 'date' },
-    { key: 'debit', label: 'Debit', type: 'money' },
-    { key: 'balance', label: 'Balance', type: 'drcr' },
+    { key: 'debit', label: 'Bill', type: 'money' },
+    { key: 'balance', label: 'Baqaya / Advance', type: 'drcr', sides: ['Baqaya', 'Advance'] },
     { key: 'qty', label: 'Qty', type: 'qty' },
   ],
   rows: [{ date: '2026-10-01', debit: '6500.00', balance: '6500.00', qty: '2.500' }, { date: '2026-10-02', debit: null, balance: '-1200.00', qty: '1.000' }],
@@ -19,8 +19,8 @@ describe('ReportView', () => {
     render(<ReportView data={data} />)
     expect(screen.getByText('01-10-2026')).toBeInTheDocument()
     expect(screen.getAllByText('6,500.00').length).toBeGreaterThan(0)
-    expect(screen.getByText('6,500.00 Dr')).toBeInTheDocument()
-    expect(screen.getAllByText('1,200.00 Cr').length).toBeGreaterThan(0)
+    expect(screen.getByText('6,500.00 Baqaya')).toBeInTheDocument()
+    expect(screen.getAllByText('1,200.00 Advance').length).toBeGreaterThan(0)
     expect(screen.getByText('2.5')).toBeInTheDocument()
   })
   it('renders the totals row', () => {

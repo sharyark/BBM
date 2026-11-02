@@ -298,6 +298,8 @@ export interface ReportColumn {
   key: string
   label: string
   type: 'text' | 'date' | 'money' | 'qty' | 'int' | 'drcr' | 'percent'
+  /** drcr only: words after a positive / negative balance, e.g. ["Baqaya", "Advance"]. */
+  sides?: [string, string]
 }
 export interface ReportData {
   title: string

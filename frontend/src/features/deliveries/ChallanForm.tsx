@@ -78,7 +78,7 @@ function BalanceTag({ b }: { b: PartyBalance }) {
   if (v > 0)
     return (
       <Tag color={b.days_unpaid !== null && b.days_unpaid > b.credit_overdue_days ? 'red' : 'orange'}>
-        Udhaar: <Money value={v} />
+        Baqaya: <Money value={v} />
         {b.days_unpaid ? ` · ${b.days_unpaid} days` : ''}
       </Tag>
     )

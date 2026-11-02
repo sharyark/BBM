@@ -13,10 +13,18 @@ from openpyxl.utils import get_column_letter
 
 from app.core.config import get_settings
 from app.core.money import money, qty
-from app.modules.reports.table import ReportTable, fmt_cell
+from app.modules.reports.table import DEFAULT_SIDES, Col, ReportTable, fmt_cell
 
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 NUMERIC = {"money": "#,##0.00", "qty": "#,##0.###", "int": "#,##0", "drcr": "#,##0.00;[Red]-#,##0.00", "percent": "0.0"}
+
+
+def _number_format(c: Col) -> str:
+    """Balances stay real numbers in Excel; the format just shows the word (Baqaya/Advance) after them."""
+    if c.type == "drcr":
+        pos, neg = c.sides or DEFAULT_SIDES
+        return f'#,##0.00 "{pos}";[Red]#,##0.00 "{neg}";0.00'
+    return NUMERIC[c.type]
 
 
 def _filename(table: ReportTable, ext: str) -> str:
@@ -53,7 +61,7 @@ def to_xlsx(table: ReportTable) -> bytes:
         ws.append(values)
         for cell, c in zip(ws[ws.max_row], table.columns, strict=True):
             if c.type in NUMERIC:
-                cell.number_format = NUMERIC[c.type]
+                cell.number_format = _number_format(c)
             if bold:
                 cell.font = Font(bold=True)
 
@@ -62,7 +70,7 @@ def to_xlsx(table: ReportTable) -> bytes:
     if table.totals:
         write({"_": None, **table.totals}, bold=True)
     for idx, col in enumerate(table.columns, start=1):
-        widest = max([len(col.label)] + [len(fmt_cell(r.get(col.key), col.type)) for r in table.rows[:200]])
+        widest = max([len(col.label)] + [len(fmt_cell(r.get(col.key), col.type, col.sides)) for r in table.rows[:200]])
         ws.column_dimensions[get_column_letter(idx)].width = min(max(widest + 2, 10), 50)
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
     buf = io.BytesIO()
@@ -114,7 +122,7 @@ def to_pdf(table: ReportTable) -> bytes:
 
     def tr(row: dict, cls: str = "") -> str:
         tds = "".join(
-            f'<td class="{"num" if c.type in NUMERIC_TYPES else ""}">{esc(fmt_cell(row.get(c.key), c.type))}</td>'
+            f'<td class="{"num" if c.type in NUMERIC_TYPES else ""}">{esc(fmt_cell(row.get(c.key), c.type, c.sides))}</td>'
             for c in table.columns
         )
         return f'<tr class="{cls}">{tds}</tr>'

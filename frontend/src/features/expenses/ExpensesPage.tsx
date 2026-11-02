@@ -90,7 +90,7 @@ export default function ExpensesPage() {
     { title: 'Category', dataIndex: 'category', render: (c: string) => <Tag color={c === 'diesel' ? 'gold' : 'default'}>{c}</Tag> },
     { title: 'Vehicle', dataIndex: 'vehicle_id', render: (id: number | null) => (id ? lookups.vehicleById.get(id)?.name : '') },
     { title: 'Litres', dataIndex: 'litres', align: 'right', render: (v) => (v ? formatQty(v) : '') },
-    { title: 'Paid via', render: (_, e) => (e.paid_via === 'party_credit' ? `Credit: ${lookups.partyById.get(e.party_id ?? 0)?.name ?? ''}` : lookups.moneyAccountById.get(e.money_account_id ?? 0)?.name) },
+    { title: 'Paid via', render: (_, e) => (e.paid_via === 'party_credit' ? `Udhaar: ${lookups.partyById.get(e.party_id ?? 0)?.name ?? ''}` : lookups.moneyAccountById.get(e.money_account_id ?? 0)?.name) },
     { title: 'Amount', dataIndex: 'amount', align: 'right', render: (v) => <Money value={v} bold /> },
   ]
   return (

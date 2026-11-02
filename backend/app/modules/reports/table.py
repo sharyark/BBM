@@ -9,12 +9,21 @@ from app.core.money import money, qty
 
 ColType = Literal["text", "date", "money", "qty", "int", "drcr", "percent"]
 
+# Words shown next to a signed (debit-positive) balance instead of Dr/Cr: (when positive, when negative).
+# Which word fits depends on whose khata it is, e.g. a positive customer balance is money still to collect.
+Sides = tuple[str, str]
+CUSTOMER_SIDES: Sides = ("Baqaya", "Advance")
+SUPPLIER_SIDES: Sides = ("Advance", "Baqaya")
+STAFF_SIDES: Sides = ("Advance", "Baqaya")
+DEFAULT_SIDES: Sides = ("Lena", "Dena")
+
 
 @dataclass(frozen=True)
 class Col:
     key: str
     label: str
     type: ColType = "text"
+    sides: Sides | None = None  # drcr columns only
 
 
 @dataclass
@@ -31,7 +40,10 @@ class ReportTable:
         return {
             "title": self.title,
             "subtitle": self.subtitle,
-            "columns": [{"key": c.key, "label": c.label, "type": c.type} for c in self.columns],
+            "columns": [
+                {"key": c.key, "label": c.label, "type": c.type, **({"sides": list(c.sides)} if c.sides else {})}
+                for c in self.columns
+            ],
             "rows": [{k: _json(v, types.get(k)) for k, v in row.items()} for row in self.rows],
             "totals": {k: _json(v, types.get(k)) for k, v in self.totals.items()} if self.totals else None,
             "meta": {k: _json(v, None) for k, v in self.meta.items()},
@@ -66,7 +78,14 @@ def fmt_date(value: Any) -> str:
     return value or ""
 
 
-def fmt_cell(value: Any, col_type: str) -> str:
+def fmt_balance(value: Any, sides: Sides | None = None) -> str:
+    """Signed balance as "1,200.00 Baqaya" / "300.00 Advance"."""
+    pos, neg = sides or DEFAULT_SIDES
+    amount = Decimal(str(value or 0))
+    return f"{fmt_money(abs(amount))} {pos if amount > 0 else neg if amount < 0 else ''}".strip()
+
+
+def fmt_cell(value: Any, col_type: str, sides: Sides | None = None) -> str:
     if value is None or value == "":
         return ""
     if col_type == "money":
@@ -80,6 +99,5 @@ def fmt_cell(value: Any, col_type: str) -> str:
     if col_type == "percent":
         return f"{Decimal(str(value)):.1f}%"
     if col_type == "drcr":
-        amount = Decimal(str(value))
-        return f"{fmt_money(abs(amount))} {'Dr' if amount > 0 else 'Cr' if amount < 0 else ''}".strip()
+        return fmt_balance(value, sides)
     return str(value)

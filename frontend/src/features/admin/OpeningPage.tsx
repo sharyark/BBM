@@ -16,9 +16,9 @@ type Entry = { side: 'dr' | 'cr'; amount: string }
 interface OpeningStock { material_id: number; qty: string; rate: string; date: string }
 
 const SIDE_LABELS: Record<Kind, [string, string]> = {
-  party: ['They owe us (Dr)', 'We owe them (Cr)'],
-  staff: ['Advance given (Dr)', 'Wages due to them (Cr)'],
-  money_account: ['Balance in hand (Dr)', 'Overdraft (Cr)'],
+  party: ['Woh denge (customer ka baqaya / supplier ko advance)', 'Hum denge (supplier ka baqaya / customer ka advance)'],
+  staff: ['Advance diya hua', 'Mazdoori baqaya (hum denge)'],
+  money_account: ['Haath / bank mein', 'Overdraft'],
 }
 
 function BalanceTable({ kind, rows, entries, onChange }: { kind: Kind; rows: { id: number; name: string; note?: string }[]; entries: Record<string, Entry>; onChange: (key: string, e: Entry) => void }) {

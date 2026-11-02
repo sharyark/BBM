@@ -56,7 +56,7 @@ export default function LocksPage() {
           type={tb.data.balanced ? 'success' : 'error'}
           icon={tb.data.balanced ? <CheckCircleOutlined /> : <WarningOutlined />}
           message={tb.data.balanced ? 'Books are balanced' : 'BOOKS ARE OUT OF BALANCE: contact support before continuing'}
-          description={<>Total debit <Money value={tb.data.total_debit} /> = total credit <Money value={tb.data.total_credit} /></>}
+          description={<>Dono taraf ka jor barabar: <Money value={tb.data.total_debit} /> = <Money value={tb.data.total_credit} /></>}
         />
       )}
       <Space style={{ marginBottom: 16 }} wrap>
