@@ -4,6 +4,13 @@
 # Run as `./public.sh`; Ctrl+C stops everything. The public link changes on every start.
 # Needs `cloudflared` (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
 set -euo pipefail
+# Keep the machine awake (no auto-suspend, closing the lid doesn't sleep) only while this script runs;
+# normal sleep comes back as soon as it stops.
+if [ -z "${HISAAB_AWAKE:-}" ] && command -v systemd-inhibit >/dev/null; then
+  export HISAAB_AWAKE=1
+  exec systemd-inhibit --what=idle:sleep:handle-lid-switch --who="Hisaab Portal" \
+    --why="Serving the public client link" --mode=block "$0" "$@"
+fi
 cd "$(dirname "${BASH_SOURCE[0]}")"
 ROOT=$PWD
 API_PORT=8100
